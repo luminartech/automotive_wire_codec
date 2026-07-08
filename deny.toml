@@ -1,0 +1,17 @@
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+  "LicenseRef-Proprietary",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[advisories]
+yanked = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,34 @@
+[package]
+name = "fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+automotive_wire_format_safety_core.workspace = true
+automotive_wire_format_safety_verifier.workspace = true
+
+[workspace]
+members = ["."]
+
+[workspace.dependencies]
+automotive_wire_format_safety_core = { path = "../crates/automotive_wire_format_safety_core" }
+automotive_wire_format_safety_verifier = { path = "../crates/automotive_wire_format_safety_verifier" }
+
+[[bin]]
+name = "sort_core_equivalence"
+path = "fuzz_targets/sort_core_equivalence.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "verifier_predicates"
+path = "fuzz_targets/verifier_predicates.rs"
+test = false
+doc = false
+bench = false

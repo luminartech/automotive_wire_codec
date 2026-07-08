@@ -1,0 +1,22 @@
+[package]
+name = "automotive_wire_format_safety_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[dependencies]
+automotive_wire_format_safety_types.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "all"
+harness = false
+
+[lints.rust]
+unsafe_code = "forbid"
