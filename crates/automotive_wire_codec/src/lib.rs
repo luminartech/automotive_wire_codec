@@ -9,3 +9,6 @@
 
 #[cfg(test)]
 extern crate std;
+
+mod error;
+pub use error::{Incomplete, TrailingBytes};
