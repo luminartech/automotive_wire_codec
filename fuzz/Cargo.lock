@@ -9,6 +9,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
+name = "automotive-wire-codec"
+version = "0.1.0"
+dependencies = [
+ "embedded-io",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -27,6 +34,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "embedded-io"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb1aa714776b75c7e67e1da744b81a129b3ff919c8712b5e1b32252c1f07cc7"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -36,9 +49,9 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 name = "fuzz"
 version = "0.0.0"
 dependencies = [
+ "automotive-wire-codec",
+ "embedded-io",
  "libfuzzer-sys",
- "safety_core",
- "safety_verifier",
 ]
 
 [[package]]
@@ -84,24 +97,6 @@ name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
-
-[[package]]
-name = "safety_core"
-version = "0.1.0"
-dependencies = [
- "safety_types",
-]
-
-[[package]]
-name = "safety_types"
-version = "0.1.0"
-
-[[package]]
-name = "safety_verifier"
-version = "0.1.0"
-dependencies = [
- "safety_types",
-]
 
 [[package]]
 name = "shlex"
