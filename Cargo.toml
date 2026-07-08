@@ -1,9 +1,6 @@
 [workspace]
 members = [
-    "crates/automotive_wire_format_safety_core",
-    "crates/automotive_wire_format_safety_types",
-    "crates/automotive_wire_format_safety_verifier",
-    "crates/automotive_wire_format_tool_wrapper",
+    "crates/automotive_wire_codec",
 ]
 exclude = ["fuzz"]
 resolver = "2"
@@ -13,10 +10,8 @@ version = "0.1.0"
 edition = "2024"
 license = "LicenseRef-Proprietary"
 authors = []
-description = "`automotive-wire-codec` is the **L0 foundation** of the layered MicroVision automotive protocol implementations. It provides the **shared zero-copy codec traits and byte-level leaf helpers** that every protocol core (L1) implements."
+description = "Zero-copy, no_std, no-alloc binary codec traits for automotive diagnostic protocols"
 documentation = ""
 
 [workspace.dependencies]
-automotive_wire_format = { path = "crates/automotive_wire_format_tool_wrapper", version = "0.1.0", registry = "kellnr" }
 proptest = "1.5"
-criterion = { version = "0.8.2", features = ["html_reports"] }

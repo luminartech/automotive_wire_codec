@@ -1,22 +1,18 @@
 [package]
-name = "automotive_wire_format_safety_core"
+name = "automotive-wire-codec"
 version.workspace = true
 edition.workspace = true
+rust-version = "1.85"
 license.workspace = true
 authors.workspace = true
-description.workspace = true
+description = "Zero-copy, no_std, no-alloc binary codec traits for automotive diagnostic protocols"
 documentation.workspace = true
 
 [dependencies]
-automotive_wire_format_safety_types.workspace = true
+embedded-io = { version = "0.7", default-features = false }
 
 [dev-dependencies]
 proptest.workspace = true
-criterion.workspace = true
-
-[[bench]]
-name = "all"
-harness = false
 
 [lints.rust]
 unsafe_code = "forbid"
