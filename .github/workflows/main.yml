@@ -272,8 +272,9 @@ jobs:
   #   - release-pr: maintains a Release PR (version bump + CHANGELOG).
   #   - release:    on merge of that PR, publishes to crates.io and creates the
   #                 git tag + GitHub release for the newly-bumped version.
-  # Both use RELEASE_PLZ_TOKEN (a PAT / GitHub App token) so the Release PR
-  # triggers CI and release tags trigger downstream workflows; CARGO_REGISTRY_TOKEN
+  # Both mint a short-lived installation token from the release-plz GitHub App
+  # (RELEASE_PLZ_APP_ID + RELEASE_PLZ_APP_PRIVATE_KEY) so the Release PR triggers
+  # CI and release tags trigger downstream workflows; CARGO_REGISTRY_TOKEN
   # authenticates the crates.io publish.
   release-plz-release:
     name: Release-plz Release
@@ -297,16 +298,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Generate a token from the release-plz GitHub App
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Run release-plz release
         uses: release-plz/action@v0.5
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   release-plz-pr:
@@ -336,14 +344,21 @@ jobs:
       group: release-plz-pr-${{ github.ref }}
       cancel-in-progress: false
     steps:
+      - name: Generate a token from the release-plz GitHub App
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Run release-plz release-pr
         uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
