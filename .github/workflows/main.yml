@@ -1,118 +1,29 @@
-name: automotive_wire_format CI
+name: UDS Protocol CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - LTS/*
-      - "*deploy"
-    tags:
-      - "**"
+    branches: [main]
   schedule:
-    - cron: "0 5 * * *"
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       enable-comprehensive-tests:
-        description: "Run comprehensive test suites"
-        required: false
-        default: false
-        type: boolean
-      run-security-scans:
-        description: "Run security scanning tools (e.g. cargo-audit, cargo-deny)"
-        required: false
-        default: false
-        type: boolean
-      run-linters:
-        description: "Run additional linters (e.g. Clippy, Rustfmt)"
-        required: false
-        default: false
-        type: boolean
-      run-unit-tests:
-        description: "Run unit tests"
-        required: false
-        default: true
-        type: boolean
-      run-property-tests:
-        description: "Run property tests (e.g. Proptest)"
-        required: false
-        default: false
-        type: boolean
-      run-fuzz-tests:
-        description: "Run fuzz tests (e.g. cargo-fuzz)"
-        required: false
-        default: false
-        type: boolean
-      run-sanitizers:
-        description: "Run tests with sanitizers enabled"
-        required: false
-        default: true
-        type: boolean
-      run-miri-tests:
-        description: "Run Miri tests for undefined behavior detection"
-        required: false
-        default: false
-        type: boolean
-      run-benchmarks:
-        description: "Run benchmark tests (e.g. cargo-criterion)"
-        required: false
-        default: false
-        type: boolean
-      enable-attestation:
-        description: "Generate and upload attestation evidence for this run"
-        required: false
-        default: false
-        type: boolean
-      persist-metrics:
-        description: "Persist generated property test failures back to the repository for historical tracking"
-        required: false
-        default: false
-        type: boolean
-      run-cargo-release:
-        description: "Publish crates to Kellnr via cargo release (auto-enabled on tag push)"
+        description: 'Run comprehensive test suites (longer fuzz, miri, benchmarks)'
         required: false
         default: false
         type: boolean
 
 permissions:
-  actions: read
   contents: read
 
 env:
-  PROJECT_SLUG: automotive_wire_format
-  DEFAULT_BRANCH: main
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
-  # sccache: compiled-artifact cache backed by the shared S3/Ceph bucket.
-  # RUSTC_WRAPPER and credentials are set per-job (secrets not allowed in top-level env).
-  SCCACHE_BUCKET: firmware-ci-data-7d
-  SCCACHE_ENDPOINT: http://s3-prod-eq-dc.sw-ci.kraken.as:80
-  SCCACHE_S3_KEY_PREFIX: "cache/automotive_wire_format/"
-  SCCACHE_REGION: auto
-  SCCACHE_S3_USE_SSL: "false"
-  # Cargo configuration variables
-  CARGO_REGISTRY_DEFAULT: "kellnr"
-  CARGO_REGISTRIES_KELLNR_INDEX: "sparse+http://kellnr-eq-dc.sw-ci.kraken.as/api/v1/crates/"
 
-#
 concurrency:
-  group: >
-    ${{
-      github.event_name == 'pull_request'
-      && format('pr-{0}-{1}', github.workflow, github.event.pull_request.number)
-      || github.event_name == 'workflow_dispatch'
-      && format('manual-{0}-{1}', github.workflow, github.ref)
-      || github.event_name == 'schedule'
-      && format('schedule-{0}-{1}', github.workflow, github.event.schedule)
-      || github.ref_type == 'tag'
-      && format('tag-{0}-{1}', github.workflow, github.run_id)
-      || github.ref_name == 'master'
-      && format('master-{0}-{1}', github.workflow, github.run_id)
-      || startsWith(github.ref_name, 'LTS')
-      && format('lts-{0}-{1}', github.workflow, github.run_id)
-      || format('branch-{0}-{1}', github.workflow, github.ref)
-    }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.event_name != 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   # =================================================================================================
@@ -120,1267 +31,288 @@ jobs:
   # =================================================================================================
   options:
     name: Resolve CI Options
-    runs-on: [x86, Linux, x-small]
+    runs-on: ubuntu-latest
     outputs:
-      run_security_scans: ${{ steps.resolve.outputs.run_security_scans }}
-      run_sanitizers: ${{ steps.resolve.outputs.run_sanitizers }}
-      enable_comprehensive_tests: ${{ steps.resolve.outputs.enable_comprehensive_tests }}
-      run_miri_tests: ${{ steps.resolve.outputs.run_miri_tests }}
-      run_benchmarks: ${{ steps.resolve.outputs.run_benchmarks }}
-      run_linters: ${{ steps.resolve.outputs.run_linters }}
-      run_unit_tests: ${{ steps.resolve.outputs.run_unit_tests }}
-      run_property_tests: ${{ steps.resolve.outputs.run_property_tests }}
-      run_fuzz_tests: ${{ steps.resolve.outputs.run_fuzz_tests }}
-      enable_attestation: ${{ steps.resolve.outputs.enable_attestation }}
-      persist_metrics: ${{ steps.resolve.outputs.persist_metrics }}
-      run_cargo_release: ${{ steps.resolve.outputs.run_cargo_release }}
+      comprehensive: ${{ steps.resolve.outputs.comprehensive }}
     steps:
       - name: Resolve event policy
         id: resolve
         shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-          HEAD_REF: ${{ github.head_ref }}
-          SCHEDULE: ${{ github.event.schedule }}
-          RUN_SECURITY_SCANS: ${{ inputs.run-security-scans }}
-          RUN_SANITIZERS: ${{ inputs.run-sanitizers }}
-          ENABLE_COMPREHENSIVE_TESTS: ${{ inputs.enable-comprehensive-tests }}
-          RUN_MIRI_TESTS: ${{ inputs.run-miri-tests }}
-          ENABLE_BENCHMARKS: ${{ inputs.run-benchmarks }}
-          RUN_LINTERS: ${{ inputs.run-linters }}
-          RUN_UNIT_TESTS: ${{ inputs.run-unit-tests }}
-          RUN_PROPERTY_TESTS: ${{ inputs.run-property-tests }}
-          RUN_FUZZ_TESTS: ${{ inputs.run-fuzz-tests }}
-          ENABLE_ATTESTATION: ${{ inputs.enable-attestation }}
-          PERSIST_METRICS: ${{ inputs.persist-metrics}}
-          RUN_CARGO_RELEASE: ${{ inputs.run-cargo-release }}
         run: |
-          set_output() {
-            echo "$1=$2" >> "$GITHUB_OUTPUT"
-            if [[ "${3:-}" != "quiet" ]]; then
-              echo "$1=$2"
-            fi
-          }
+          comprehensive="false"
 
-          set_defaults() {
-            set_output run_security_scans false quiet
-            set_output run_sanitizers true quiet
-            set_output enable_comprehensive_tests false quiet
-            set_output run_miri_tests false quiet
-            set_output run_benchmarks false quiet
-            set_output enable_attestation false quiet
-            set_output run_unit_tests true quiet
-            set_output run_property_tests true quiet
-            set_output run_fuzz_tests true quiet
-            set_output run_linters true quiet
-            set_output persist_metrics false quiet
-            set_output run_cargo_release false quiet
-          }
-
-          has_value() {
-            local list=",${1// /},"
-            local value="$2"
-            [[ "$list" == *",all,"* || "$list" == *",$value,"* ]]
-          }
-
-          is_enabled() {
-            local board="$1"
-            local customer="$2"
-            has_value "$ENABLED_BOARDS" "$board" && has_value "$ENABLED_CUSTOMERS" "$customer"
-          }
-
-          set_defaults
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            set_output run_security_scans "${RUN_SECURITY_SCANS:-false}"
-            set_output run_sanitizers "${RUN_SANITIZERS:-true}"
-            set_output enable_comprehensive_tests "${ENABLE_COMPREHENSIVE_TESTS:-false}"
-            set_output run_miri_tests "${RUN_MIRI_TESTS:-false}"
-            set_output run_benchmarks "${RUN_BENCHMARKS:-false}"
-            set_output enable_attestation "${ENABLE_ATTESTATION:-false}"
-            set_output run_unit_tests "${RUN_UNIT_TESTS:-true}"
-            set_output run_property_tests "${RUN_PROPERTY_TESTS:-true}"
-            set_output run_fuzz_tests "${RUN_FUZZ_TESTS:-true}"
-            set_output run_linters "${RUN_LINTERS:-true}"
-            set_output persist_metrics "${PERSIST_METRICS:-false}"
-            set_output run_cargo_release "${RUN_CARGO_RELEASE:-false}"
-          elif [[ "$EVENT_NAME" == "schedule" ]]; then
-            set_output run_security_scans true
-            set_output run_sanitizers true
-            set_output enable_comprehensive_tests true
-            set_output run_miri_tests true
-            set_output run_benchmarks true
-            set_output persist_metrics true
-          elif [[ "$EVENT_NAME" == "push" ]]; then
-            if [[ "$REF_TYPE" == "tag" ]] || [[ "$REF_NAME" == "master" ]] || [[ "$REF_NAME" =~ ^LTS/.* ]] || [[ "$REF_NAME" =~ .*-deploy ]]; then
-              set_output run_security_scans true
-              set_output run_sanitizers true
-              set_output enable_comprehensive_tests true
-              set_output run_miri_tests true
-              set_output run_benchmarks true
-              set_output enable_attestation true
-              set_output persist_metrics true
-            fi
-            if [[ "$REF_TYPE" == "tag" ]]; then
-              set_output run_cargo_release true
-            fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            comprehensive="${{ inputs.enable-comprehensive-tests }}"
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            comprehensive="true"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "main" ]]; then
+            comprehensive="true"
           fi
 
-          echo "ferrocene_token=${{ secrets.FERROCENE_TOKEN }}" >> "$GITHUB_OUTPUT"
-
-  # =================================================================================================
-  # Image Lifecycle
-  # =================================================================================================
-  image-lifecycle:
-    name: Image Lifecycle
-    uses: luminartech/fw_ci/.github/workflows/image-lifecycle.yml@v4
-    secrets: inherit
-    needs: [options]
-    with:
-      images: rust,uv_minimal,mvdoc
-      #
-      s3-project: automotive_wire_format
-      #
-      run-security-scans: ${{ needs.options.outputs.run_security_scans }}
-      extra-env: "ferrocene_token=${{ needs.options.outputs.ferrocene_token }}"
-      extra-build-args: --secret id=ferrocene_token,env=ferrocene_token
-
-  # =================================================================================================
-  # Toolchain Verification
-  # =================================================================================================
-  toolchain-verification:
-    name: Toolchain Verification
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle]
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-
-      - name: Verify Rust toolchain
-        run: |
-          echo "=== Rust Toolchain Verification ==="
-          # cat /criticalup.toml
-          # criticalup status
-          rustc --version
-          echo "RUST_VERSION=$(rustc --version)" >> $GITHUB_ENV
-
-      - name: Generate toolchain checksums
-        run: |
-          echo "=== Toolchain Checksums ===" | tee toolchain-checksums.txt
-          echo "rustc binary:" >> toolchain-checksums.txt
-          sha256sum $(which rustc) >> toolchain-checksums.txt
-
-          echo "cargo binary:" >> toolchain-checksums.txt
-          sha256sum $(which cargo) >> toolchain-checksums.txt
-
-          echo "Full toolchain hash:" >> toolchain-checksums.txt
-          find /opt/rustup/toolchains -type f \( -name "*.so" -o -name "rustc" -o -name "cargo" \) | sort | xargs sha256sum >> toolchain-checksums.txt
-
-      - name: Upload toolchain metadata + checksums
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: toolchain-metadata
-          path: |
-            /criticalup.toml
-            toolchain-checksums.txt
-          s3-path: evidence/toolchain
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
+          echo "comprehensive=$comprehensive" >> "$GITHUB_OUTPUT"
 
   # =================================================================================================
   # Pre-commit
   # =================================================================================================
   pre-commit:
     name: Pre-commit Checks
-    needs: [image-lifecycle]
-    runs-on: [x86, Linux, small]
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).uv_minimal.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.token_secret] }}
+    runs-on: ubuntu-latest
     steps:
-      - name: Setup SSH for git+ssh dependencies
-        uses: luminartech/fw_ci/.github/actions/lum-setup-ssh@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
         with:
-          ssh-key: ${{ secrets.LUMINARCI_SSH_KEY }}
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Run pre-commit
-        run: |
-          git lfs pull
-          export SKIP=no-commit-to-branch
-          uvx pre-commit run --all-files
+          python-version: '3.12'
+      - uses: pre-commit/action@v3.0.1
 
   # =================================================================================================
   # Linting and Formatting
   # =================================================================================================
   lint:
-    name: Linters & Formatters
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle, options]
-    if: needs.options.outputs.run_linters == 'true'
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    name: Lint & Format
+    runs-on: ubuntu-latest
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Run format check
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings -Dclippy::pedantic
+        run: cargo clippy --all-targets --all-features -- -D warnings -D clippy::pedantic
+      - name: Run clippy (no_std)
+        run: cargo clippy --no-default-features -- -D warnings -D clippy::pedantic
 
   # =================================================================================================
-  # Builds
+  # Build
   # =================================================================================================
   build:
-    name: Build & Package
-    runs-on: [x86, Linux, medium]
-    needs: [image-lifecycle, options]
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      RUSTC_WRAPPER: sccache
-      AWS_ACCESS_KEY_ID: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    name: Build
+    runs-on: ubuntu-latest
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Setup sccache
-        run: sccache --start-server || echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
-      - name: Build release project
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
         run: cargo build --release --all-features
-      - name: Collect build artifacts
-        shell: bash
-        run: |
-          rm -rf ci-artifacts/build
-          mkdir -p ci-artifacts/build
-          if [[ -d target/release ]]; then
-            cp -a target/release/. ci-artifacts/build/
-          else
-            echo "target/release not found" > ci-artifacts/build/README.txt
-          fi
-      - name: Upload build artifacts
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: build-artifacts
-          path: ci-artifacts/build/
-          s3-path: build/release
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: Collect cargo metadata
-        run: |
-          rm -rf ci-artifacts/cargo
-          mkdir -p ci-artifacts/cargo
-          cargo metadata --format-version 1 --no-deps > ci-artifacts/cargo/metadata.json
-          cargo tree --workspace --all-features > ci-artifacts/cargo/tree.txt || true
-          {
-            cargo --version
-            rustc --version
-          } > ci-artifacts/cargo/toolchain.txt
-      - name: Upload cargo metadata
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: cargo-metadata
-          path: ci-artifacts/cargo/
-          s3-path: build/cargo
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
 
   # =================================================================================================
-  # Tests
+  # Bare-metal no_std Build
+  # =================================================================================================
+  no-std:
+    name: Build no_std (bare-metal)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv6m-none-eabi
+      - uses: Swatinem/rust-cache@v2
+      - name: Build no_std
+        run: cargo build --no-default-features --target thumbv6m-none-eabi
+
+  # =================================================================================================
+  # Unit Tests
   # =================================================================================================
   unit-tests:
     name: Unit Tests
-    runs-on: [x86, Linux, medium]
-    needs: [image-lifecycle, options]
-    if: needs.options.outputs.run_unit_tests == 'true'
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      RUSTC_WRAPPER: sccache
-      AWS_ACCESS_KEY_ID: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Setup sccache
-        run: sccache --start-server || echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run tests with coverage
         run: |
-          mkdir -p target/llvm-cov
-          # Run tests once and collect coverage data
-          cargo llvm-cov nextest --profile ci --all-features --all-targets -E 'not test(prop_)' --no-report
-          # Generate reports from cached coverage data
-          cargo llvm-cov report --lcov --output-path target/llvm-cov/lcov.info
-          cargo llvm-cov report --html --output-dir target/llvm-cov/html
-      - name: Verify unit JUnit report exists
-        run: |
-          test -f target/nextest/ci/junit.xml || {
-            echo "::error::Expected JUnit report not found at target/nextest/ci/junit.xml"
-            exit 1
-          }
-      - name: Upload test results (JUnit)
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
+          cargo llvm-cov nextest --all-features --all-targets -E 'not test(prop_)' --lcov --output-path lcov.info
+      - name: Upload coverage
+        uses: actions/upload-artifact@v7
         with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: nextest-results
-          path: target/nextest/ci/junit.xml
-          s3-path: tests/unit
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: Upload coverage report (LCOV + HTML)
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: coverage-report
-          path: target/llvm-cov
-          s3-path: coverage
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: Enforce minimum coverage (85%)
-        run: |
-          COVERAGE=$(cargo llvm-cov report --summary-only | grep -oP 'lines\.\.\.\K\d+\.\d+' | head -1)
-          echo "Line coverage: $COVERAGE%"
-          if (( $(echo "$COVERAGE < 90" | bc -l) )); then
-            echo "::warning::❌ Coverage below 90% ($COVERAGE%)"
-            exit 1
-          fi
-          if (( $(echo "$COVERAGE < 85" | bc -l) )); then
-            echo "::error::❌ Coverage below 85% ($COVERAGE%)"
-            exit 1
-          fi
-          echo "✅ Coverage requirement met ($COVERAGE%)"
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
+          name: coverage-lcov
+          path: lcov.info
+          retention-days: 7
 
+  # =================================================================================================
+  # Property Tests
+  # =================================================================================================
   property-tests:
     name: Property Tests
-    runs-on: [x86, Linux, medium]
-    needs: [image-lifecycle, options]
-    if: needs.options.outputs.run_property_tests == 'true'
-    permissions:
-      contents: write
-      actions: read
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      RUSTC_WRAPPER: sccache
-      AWS_ACCESS_KEY_ID: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Setup sccache
-        run: sccache --start-server || echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Run property tests
-        run: cargo nextest run --profile ci --all-features --lib -E 'test(prop_)' --test-threads=4
-      - name: Verify property JUnit report exists
-        run: |
-          test -f target/nextest/ci/junit.xml || {
-            echo "::error::Expected JUnit report not found at target/nextest/ci/junit.xml"
-            exit 1
-          }
-      - name: Collect property persistence files
-        if: needs.options.outputs.persist_metrics == 'true'
-        run: |
-          if ! find . -type d -name proptest-regressions -print -quit | grep -q .; then
-            echo "No proptest-regressions directories found"
-          fi
-      - name: Capture property persistence changes
-        if: needs.options.outputs.persist_metrics == 'true'
-        shell: bash
-        run: |
-          : > property-persistence.patch
-          find . -type d -name proptest-regressions -print0 | while IFS= read -r -d '' dir; do
-            git add -N -f -- "$dir" || true
-          done
-          git diff --binary -- '**/proptest-regressions/**' > property-persistence.patch || true
-          if [[ -s property-persistence.patch ]]; then
-            echo "Captured property persistence changes"
-          else
-            echo "No property persistence changes detected"
-          fi
-      - name: Persist property regressions [skip ci]
-        if: needs.options.outputs.persist_metrics == 'true'
-        env:
-          RUN_SHA: ${{ github.sha }}
-          BRANCH_NAME: ${{ github.ref_name }}
-        shell: bash
-        run: |
-          git fetch origin "$BRANCH_NAME"
-          latest_sha="$(git rev-parse "origin/$BRANCH_NAME")"
-          if [[ "$latest_sha" != "$RUN_SHA" ]]; then
-            echo "::notice::Skipping persistence commit because branch advanced (origin/$BRANCH_NAME=$latest_sha, run_sha=$RUN_SHA)."
-            exit 0
-          fi
+        run: cargo nextest run --all-features --lib -E 'test(prop_)' --test-threads=4
 
-          find . -type d -name proptest-regressions -print0 | while IFS= read -r -d '' dir; do
-            git add -A -f -- "$dir"
-          done
-
-          if git diff --cached --quiet; then
-            echo "No proptest regression changes to commit"
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(ci): persist proptest regressions [skip ci]"
-
-          git fetch origin "$BRANCH_NAME"
-          latest_remote_sha="$(git rev-parse "origin/$BRANCH_NAME")"
-          if [[ "$latest_remote_sha" != "$RUN_SHA" ]]; then
-            echo "::notice::Branch changed before push; skipping push to avoid overwriting newer commit."
-            exit 0
-          fi
-
-          git push --force-with-lease="refs/heads/$BRANCH_NAME:$RUN_SHA" origin "HEAD:$BRANCH_NAME"
-      - name: Upload property test results
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: property-test-results
-          path: target/nextest/ci/junit.xml
-          s3-path: tests/property
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
+  # =================================================================================================
+  # Fuzz Tests
+  # =================================================================================================
   fuzz-tests:
     name: Fuzz Tests
-    runs-on: [x86, Linux, medium]
-    needs: [image-lifecycle, options]
-    if: needs.options.outputs.run_fuzz_tests == 'true'
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    runs-on: ubuntu-latest
+    needs: [options]
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Build cargo fuzz targets
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Build fuzz targets
         run: cargo fuzz build
       - name: Run fuzz targets
         run: |
-          MAX_TIME=${{ needs.options.outputs.enable_comprehensive_tests == 'true' && 60 || 6 }}
-          cargo fuzz run sort_core_equivalence -- -max_total_time=${MAX_TIME}
-          cargo fuzz run verifier_predicates -- -max_total_time=${MAX_TIME}
-      - name: Prepare fuzz evidence bundle
-        if: always()
-        run: |
-          mkdir -p fuzz/ci-evidence
-          if [[ -d fuzz/artifacts ]]; then
-            cp -a fuzz/artifacts/. fuzz/ci-evidence/
-          fi
-          {
-            echo "fuzz_run_status=completed"
-            echo "commit=${{ github.sha }}"
-            echo "ref=${{ github.ref_name }}"
-            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "file_count=$(find fuzz/ci-evidence -type f | wc -l)"
-          } > fuzz/ci-evidence/summary.txt
-      - name: Upload fuzz artifacts
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        if: always()
+          MAX_TIME=${{ needs.options.outputs.comprehensive == 'true' && 60 || 6 }}
+          cargo fuzz run fuzz_request_decode -- -max_total_time=${MAX_TIME}
+          cargo fuzz run fuzz_response_decode -- -max_total_time=${MAX_TIME}
+          cargo fuzz run fuzz_roundtrip -- -max_total_time=${MAX_TIME}
+      - name: Upload fuzz artifacts on failure
+        uses: actions/upload-artifact@v7
+        if: failure()
         with:
-          s3-project: ${{ env.PROJECT_SLUG }}
           name: fuzz-artifacts
-          path: fuzz/ci-evidence/
-          s3-path: tests/fuzz
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-  # =================================================================================================
-  # Sanitizer Tests (ASan, TSan, UBSan)
-  # =================================================================================================
-  sanitizer-tests:
-    name: Sanitizer Tests
-    runs-on: [x86, Linux, medium]
-    needs: [image-lifecycle, options]
-    if: needs.options.outputs.run_sanitizers == 'true'
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-      options: --privileged # ThreadSanitizer needs setarch -R to disable ASLR, requires privileged container
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
-    steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      # Sanitizers require rebuilding std with -Zbuild-std to ensure ABI compatibility.
-      # Target-specific RUSTFLAGS prevent instrumenting proc macros (e.g., zerocopy-derive).
-      - name: Run AddressSanitizer
-        run: cargo +nightly test --all-features --lib --target x86_64-unknown-linux-gnu -Zbuild-std
-        env:
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Zsanitizer=address"
-      - name: Run ThreadSanitizer
-        run: setarch $(uname -m) -R cargo +nightly test --all-features --lib --target x86_64-unknown-linux-gnu -Zbuild-std
-        env:
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-Zsanitizer=thread"
+          path: fuzz/artifacts/
+          retention-days: 30
 
   # =================================================================================================
   # Miri Tests (Undefined Behaviour Detection)
   # =================================================================================================
   miri-tests:
     name: Miri Tests
-    runs-on: [x86, Linux, medium]
-    needs: [image-lifecycle, options]
-    if: needs.options.outputs.run_miri_tests == 'true'
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    runs-on: ubuntu-latest
+    needs: [options]
+    if: needs.options.outputs.comprehensive == 'true'
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
       - name: Run Miri tests
         env:
           PROPTEST_DISABLE_FAILURE_PERSISTENCE: "1"
           MIRIFLAGS: "-Zmiri-env-forward=PROPTEST_DISABLE_FAILURE_PERSISTENCE"
-        run: |
-          #
-          cargo +nightly miri test -p automotive_wire_format_safety_types
-          cargo +nightly miri test -p automotive_wire_format_safety_core
-          cargo +nightly miri test -p automotive_wire_format_safety_verifier
-          #
+        run: cargo +nightly miri test -p automotive-wire-codec
 
   # =================================================================================================
-  # Benchmarks
+  # MSRV Check
   # =================================================================================================
-  bench:
-    name: Benchmarks
-    runs-on: [x86, Linux, large]
-    needs: [image-lifecycle, options]
-    if: needs.options.outputs.run_benchmarks == 'true'
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      RUSTC_WRAPPER: sccache
-      AWS_ACCESS_KEY_ID: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+  msrv:
+    name: Check MSRV
+    runs-on: ubuntu-latest
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Setup sccache
-        run: sccache --start-server || echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
-      - name: Run criterion benchmarks
-        run: cargo criterion --all-features --bench all
-      - name: Upload benchmark reports
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          name: benchmarks
-          path: target/criterion/
-          s3-project: ${{ env.PROJECT_SLUG }}
-          s3-path: benchmarks
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build with MSRV
+        run: cargo build --all-features
 
   # =================================================================================================
   # Semver Checks
   # =================================================================================================
   semver-checks:
     name: Semver Checks
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle]
-    continue-on-error: true # Skip failures for unpublished crates without baseline
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    runs-on: ubuntu-latest
+    # Run on PRs (catch breaks before merge) and on main (release gate)
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # Need full history for git-based baseline comparison
-      - name: Check semver
-        uses: obi1kenobi/cargo-semver-checks-action@v2
+          fetch-depth: 0
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          # Use git-based comparison for private crates
-          baseline-rev: ${{ env.DEFAULT_BRANCH}}
+          package: automotive-wire-codec
 
   # =================================================================================================
   # Security & Supply Chain
   # =================================================================================================
   security:
-    name: Security & Supply Chain Scanning
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle]
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    name: Security Audit
+    runs-on: ubuntu-latest
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install audit tools
+        run: cargo install cargo-audit cargo-deny --locked
       - name: Run cargo audit
-        run: cargo audit --file Cargo.lock | tee audit-report.txt
+        run: cargo audit --file Cargo.lock
       - name: Run cargo deny
-        run: cargo deny check | tee deny-report.txt
-      - name: Run cargo vet
-        run: cargo vet | tee vet-report.txt
-      - name: Run cargo udeps (unused dependencies)
-        env:
-          RUSTC_BOOTSTRAP: "1"
-        run: cargo udeps --all-targets --all-features | tee udeps-report.txt
-      - name: Upload cargo audit report
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        if: always()
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-audit
-          path: audit-report.txt
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: Upload cargo deny report
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        if: always()
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-deny
-          path: deny-report.txt
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: Upload cargo vet report
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        if: always()
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-vet
-          path: vet-report.txt
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: Upload supply-chain audit report
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        if: always()
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-supply-chain
-          path: supply-chain-report.txt
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      - name: Upload udeps report
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        if: always()
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-udeps
-          path: udeps-report.txt
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-  # =================================================================================================
-  # SBOM Generation
-  # =================================================================================================
-  sbom:
-    name: Software Bill of Materials (SBOM)
-    runs-on: [x86, Linux, x-small]
-    needs: [image-lifecycle]
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
-    steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Generate CycloneDX SBOM
-        run: cargo cyclonedx --format xml
-      - name: Upload SBOM
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: sbom
-          path: crates/**/*.cdx.xml
-          s3-path: sbom
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
+        run: cargo deny check
 
   # =================================================================================================
   # Documentation
   # =================================================================================================
   docs:
-    name: Rust Documentation
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle]
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
+    name: Documentation
+    runs-on: ubuntu-latest
     steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Build argo docs
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build docs
         run: cargo doc --no-deps --all-features
-      - name: Upload docs
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: documentation
-          path: target/doc/
-          s3-path: docs
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-  # =================================================================================================
-  # Process Documentation
-  # =================================================================================================
-  the-way:
-    name: The Way (Build & Publish)
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle]
-    outputs:
-      the_way_url: ${{ steps.publish.outputs.url }}
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).uv_minimal.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.token_secret] }}
-    steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - uses: luminartech/fw_ci/.github/actions/lum-setup-ssh@v4
-        with:
-          ssh-key: ${{ secrets.LUMINARCI_SSH_KEY }}
-      - name: Build "The Way" documentation
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          uv run --group the_way export-html \
-            --docs-root . \
-            --build-path build/docs \
-            --jobs 1 \
-            --zip-output build/docs \
-            --verbose
-          mv build/docs/html.zip build/docs/the-way.zip
-      - name: Publish The Way artifacts
-        id: publish
-        continue-on-error: true
-        uses: luminartech/fw_ci/.github/actions/lum-publish-files@v4
-        with:
-          ssh-private-key: ${{ secrets.THE_WAY_WEBSERVER_PRIVATE_KEY }}
-          rules: "build/docs/the-way.zip:the-way"
-          index-filename: "the_way.html"
-          summary-title: "The Way Documentation"
-          summary-link-text: "View The Way"
-          base-dir: ${{ env.PROJECT_SLUG }}
-      - name: Upload The Way artifacts
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: the-way
-          path: build/docs/the-way.zip
-          summary-category: Documentation
-          summary-description: The Way process documentation
-          s3-path: the_way
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
+          RUSTDOCFLAGS: "-D warnings"
 
   # =================================================================================================
-  # Testspace Integration
+  # Release (release-plz)
   # =================================================================================================
-  testspace:
-    name: Publish Test Results to Testspace
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle, unit-tests, property-tests, fuzz-tests]
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).uv_minimal.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.token_secret] }}
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-
-      - name: Download unit test results
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: nextest-results
-          path: test-results/
-          s3-path: tests/unit
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download property test results
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        continue-on-error: true
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: property-test-results
-          path: test-results/
-          s3-path: tests/property
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Setup Testspace client
-        uses: testspace-com/setup-testspace@v1
-        with:
-          domain: ${{ secrets.TESTSPACE_DOMAIN }}
-
-      - name: Publish to Testspace
-        run: |
-          SPACE_NAME="${{ github.ref_name }}"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            SPACE_NAME="PR-${{ github.event.pull_request.number }}"
-          fi
-          testspace config url "${{ secrets.TESTSPACE_DOMAIN }}"
-          testspace "test-results/*.xml" --space="${SPACE_NAME}" --name="${{ github.sha }}" --message="${{ github.event.head_commit.message || 'Pull request build' }}"
-
-  # =================================================================================================
-  # Qualification Evidence (self-contained bundle for auditors)
-  # =================================================================================================
-  qualification-evidence:
-    name: Qualification Evidence
-    runs-on: [x86, Linux, small]
-    needs:
-      [
-        image-lifecycle,
-        unit-tests,
-        property-tests,
-        fuzz-tests,
-        bench,
-        sbom,
-        toolchain-verification,
-        security,
-        options,
-      ]
-    if: needs.options.outputs.enable_attestation == 'true'
-    permissions:
-      id-token: write
-      attestations: write
-      contents: read
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).uv_minimal.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.token_secret] }}
-    steps:
-      - name: Checkout (use real commit SHA/ref for traceability)
-        id: checkout
-        uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-
-      - name: Create qualification evidence package (self-contained bundle)
-        run: |
-          mkdir -p evidence-bundle
-
-          # Create folder structure for the self-contained bundle
-          mkdir -p evidence-bundle/toolchain \
-                  evidence-bundle/security \
-                  evidence-bundle/tests/unit \
-                  evidence-bundle/tests/property \
-                  evidence-bundle/tests/fuzz \
-                  evidence-bundle/sbom \
-                  evidence-bundle/coverage
-
-      - name: Download toolchain metadata + checksums
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: toolchain-metadata
-          path: evidence-bundle/toolchain
-          s3-path: evidence/toolchain
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download security-audit report
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-audit
-          path: evidence-bundle/security
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download security-deny report
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-deny
-          path: evidence-bundle/security
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download security-vet report
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-vet
-          path: evidence-bundle/security
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download security-supply-chain report
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-supply-chain
-          path: evidence-bundle/security
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download security-udeps report
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: security-udeps
-          path: evidence-bundle/security
-          s3-path: evidence/security
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download unit test results
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: nextest-results
-          path: evidence-bundle/tests/unit
-          s3-path: tests/unit
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download property test results
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: property-test-results
-          path: evidence-bundle/tests/property
-          s3-path: tests/property
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download fuzz artifacts
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: fuzz-artifacts
-          path: evidence-bundle/tests/fuzz
-          s3-path: tests/fuzz
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download SBOM
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: sbom
-          path: evidence-bundle/sbom
-          s3-path: sbom
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download coverage report
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: coverage-report
-          path: evidence-bundle/coverage
-          s3-path: coverage
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Zip everything into one self-contained package
-        run: |
-          zip -r qualification-evidence-${{ steps.checkout.outputs.sha }}.zip evidence-bundle/
-
-      - name: Compute SHA256 of evidence package
-        run: |
-          echo "=== Evidence Package Digest ==="
-          sha256sum qualification-evidence-${{ steps.checkout.outputs.sha }}.zip | tee evidence-digest.txt
-
-      - name: Create GitHub Attestation (cryptographic immutability proof)
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: qualification-evidence-${{ steps.checkout.outputs.sha }}.zip
-
-      - name: Upload qualification evidence (self-contained ZIP + digest)
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: qualification-evidence
-          path: |
-            qualification-evidence-${{ steps.checkout.outputs.sha }}.zip
-            evidence-digest.txt
-          s3-path: evidence/qualification
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-  # =================================================================================================
-  # Release
-  # =================================================================================================
-  publish:
-    name: Publish to Kellnr
-    runs-on: [x86, Linux, medium]
-    needs:
-      - options
-      - image-lifecycle
-      - toolchain-verification
-      - pre-commit
-      - lint
-      - build
-      - unit-tests
-      - property-tests
-      - fuzz-tests
-      - sanitizer-tests
-      - miri-tests
-      - semver-checks
-      - security
-      - sbom
-    if: needs.options.outputs.run_cargo_release == 'true'
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).rust.token_secret] }}
-    env:
-      RUSTC_WRAPPER: sccache
-      AWS_ACCESS_KEY_ID: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-      CARGO_REGISTRIES_KELLNR_TOKEN: ${{ secrets.KELLNR_CI_TOKEN }}
-    steps:
-      - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-      - name: Publish crates to Kellnr
-        run: |
-          cargo release publish --workspace --no-confirm --execute \
-            || { echo "::error::cargo release publish failed; see log above for details"; exit 1; }
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
-
-  github-release:
-    name: Release
-    runs-on: [x86, Linux, small]
-    needs: [image-lifecycle, publish]
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+  # Runs only after the full verification suite passes on a push to main.
+  #   - release-pr: maintains a Release PR (version bump + CHANGELOG).
+  #   - release:    on merge of that PR, publishes to crates.io and creates the
+  #                 git tag + GitHub release for the newly-bumped version.
+  # Both use RELEASE_PLZ_TOKEN (a PAT / GitHub App token) so the Release PR
+  # triggers CI and release tags trigger downstream workflows; CARGO_REGISTRY_TOKEN
+  # authenticates the crates.io publish.
+  release-plz-release:
+    name: Release-plz Release
+    runs-on: ubuntu-latest
+    needs: [pre-commit, lint, build, no-std, unit-tests, property-tests, fuzz-tests, miri-tests, msrv, semver-checks, security, docs]
+    if: github.repository == 'luminartech/automotive_wire_format' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
-    container:
-      image: ${{ fromJson(needs.image-lifecycle.outputs.data).uv_minimal.image }}
-      credentials:
-        username: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.username_secret] }}
-        password: ${{ secrets[fromJson(needs.image-lifecycle.outputs.data).uv_minimal.token_secret] }}
     steps:
-      - name: Checkout
-        uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
-
-      - name: Validate tag and extract version
-        id: version
-        shell: bash
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run release-plz release
+        uses: release-plz/action@v0.5
+        with:
+          command: release
         env:
-          RAW_TAG: ${{ github.ref_name }}
-        run: |
-          if [[ ! "$RAW_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z][0-9A-Za-z.-]*))?$ ]]; then
-            echo "::error::Tag '$RAW_TAG' is invalid. Expected v<MAJOR>.<MINOR>.<PATCH> or v<MAJOR>.<MINOR>.<PATCH>-<META>."
-            exit 1
-          fi
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-          version="${BASH_REMATCH[0]}"
-          major="${BASH_REMATCH[1]}"
-          minor="${BASH_REMATCH[2]}"
-          patch="${BASH_REMATCH[3]}"
-          meta="${BASH_REMATCH[5]:-}"
-
-          if [[ -n "$meta" ]]; then
-            prerelease="true"
-          else
-            prerelease="false"
-          fi
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "major=$major" >> "$GITHUB_OUTPUT"
-          echo "minor=$minor" >> "$GITHUB_OUTPUT"
-          echo "patch=$patch" >> "$GITHUB_OUTPUT"
-          echo "meta=$meta" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare release asset folders
-        run: |
-          mkdir -p release-assets/build \
-                   release-assets/cargo \
-                   release-assets/tests/unit \
-                   release-assets/tests/property \
-                   release-assets/tests/fuzz \
-                   release-assets/sbom \
-                   release-assets/security \
-                   release-assets/toolchain \
-                   release-assets/evidence
-
-      - name: Download build artifacts
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
+  release-plz-pr:
+    name: Release-plz PR
+    runs-on: ubuntu-latest
+    needs: [pre-commit, lint, build, no-std, unit-tests, property-tests, fuzz-tests, miri-tests, msrv, semver-checks, security, docs]
+    if: github.repository == 'luminartech/automotive_wire_format' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      pull-requests: write
+    # Serialize Release PR updates; never cancel an in-flight release.
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
         with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: build-artifacts
-          path: release-assets/build
-          s3-path: build/release
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download cargo metadata
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run release-plz release-pr
+        uses: release-plz/action@v0.5
         with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: cargo-metadata
-          path: release-assets/cargo
-          s3-path: build/cargo
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download unit test results
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: nextest-results
-          path: release-assets/tests/unit
-          s3-path: tests/unit
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download property test results
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: property-test-results
-          path: release-assets/tests/property
-          s3-path: tests/property
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download fuzz artifacts
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: fuzz-artifacts
-          path: release-assets/tests/fuzz
-          s3-path: tests/fuzz
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download SBOM
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: sbom
-          path: release-assets/sbom
-          s3-path: sbom
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download toolchain metadata + checksums
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: toolchain-metadata
-          path: release-assets/toolchain
-          s3-path: evidence/toolchain
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Download qualification evidence package
-        uses: luminartech/fw_ci/.github/actions/lum-download-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: qualification-evidence
-          path: release-assets/evidence
-          s3-path: evidence/qualification
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Build release manifest
-        shell: bash
-        run: |
-          cat > release-assets/release-manifest.json <<'EOF'
-          {
-            "project": "${{ env.PROJECT_SLUG }}",
-            "tag": "${{ github.ref_name }}",
-            "version": "${{ steps.version.outputs.version }}",
-            "major": "${{ steps.version.outputs.major }}",
-            "minor": "${{ steps.version.outputs.minor }}",
-            "patch": "${{ steps.version.outputs.patch }}",
-            "meta": "${{ steps.version.outputs.meta }}",
-            "prerelease": ${{ steps.version.outputs.prerelease }},
-            "commit": "${{ github.sha }}",
-            "run_id": "${{ github.run_id }}",
-            "run_attempt": "${{ github.run_attempt }}",
-            "generated_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-
-      - name: Create release bundle
-        shell: bash
-        run: |
-          zip -r "release-${{ steps.version.outputs.version }}.zip" release-assets/
-          sha256sum "release-${{ steps.version.outputs.version }}.zip" > "release-${{ steps.version.outputs.version }}.sha256"
-
-      - name: Upload release bundle to S3
-        uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
-        with:
-          s3-project: ${{ env.PROJECT_SLUG }}
-          name: release-bundle
-          path: |
-            release-${{ steps.version.outputs.version }}.zip
-            release-${{ steps.version.outputs.version }}.sha256
-            release-assets/release-manifest.json
-          s3-path: releases/${{ steps.version.outputs.version }}
-          s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
-          s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ env.PROJECT_SLUG }} ${{ steps.version.outputs.version }}
-          prerelease: ${{ steps.version.outputs.prerelease }}
-          generate_release_notes: true
-          files: |
-            release-${{ steps.version.outputs.version }}.zip
-            release-${{ steps.version.outputs.version }}.sha256
-            release-assets/release-manifest.json
-
-#
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
