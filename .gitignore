@@ -330,3 +330,5 @@ fuzz/artifacts/
 # Local-only design/process docs (not version controlled)
 /l0-wire-codec-spec.md
 /docs/superpowers/
+
+.DS_Store
