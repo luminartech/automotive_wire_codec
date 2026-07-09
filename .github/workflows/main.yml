@@ -3,72 +3,72 @@ on:
   pull_request:
   push:
     branches:
-      - master
+      - main
       - LTS/*
-      - '*deploy'
+      - "*deploy"
     tags:
-      - '**'
+      - "**"
   schedule:
-    - cron: '0 5 * * *'
+    - cron: "0 5 * * *"
   workflow_dispatch:
     inputs:
       enable-comprehensive-tests:
-        description: 'Run comprehensive test suites'
+        description: "Run comprehensive test suites"
         required: false
         default: false
         type: boolean
       run-security-scans:
-        description: 'Run security scanning tools (e.g. cargo-audit, cargo-deny)'
+        description: "Run security scanning tools (e.g. cargo-audit, cargo-deny)"
         required: false
         default: false
         type: boolean
       run-linters:
-        description: 'Run additional linters (e.g. Clippy, Rustfmt)'
+        description: "Run additional linters (e.g. Clippy, Rustfmt)"
         required: false
         default: false
         type: boolean
       run-unit-tests:
-        description: 'Run unit tests'
+        description: "Run unit tests"
         required: false
         default: true
         type: boolean
       run-property-tests:
-        description: 'Run property tests (e.g. Proptest)'
+        description: "Run property tests (e.g. Proptest)"
         required: false
         default: false
         type: boolean
       run-fuzz-tests:
-        description: 'Run fuzz tests (e.g. cargo-fuzz)'
+        description: "Run fuzz tests (e.g. cargo-fuzz)"
         required: false
         default: false
         type: boolean
       run-sanitizers:
-        description: 'Run tests with sanitizers enabled'
+        description: "Run tests with sanitizers enabled"
         required: false
         default: true
         type: boolean
       run-miri-tests:
-        description: 'Run Miri tests for undefined behavior detection'
+        description: "Run Miri tests for undefined behavior detection"
         required: false
         default: false
         type: boolean
       run-benchmarks:
-        description: 'Run benchmark tests (e.g. cargo-criterion)'
+        description: "Run benchmark tests (e.g. cargo-criterion)"
         required: false
         default: false
         type: boolean
       enable-attestation:
-        description: 'Generate and upload attestation evidence for this run'
+        description: "Generate and upload attestation evidence for this run"
         required: false
         default: false
         type: boolean
       persist-metrics:
-        description: 'Persist generated property test failures back to the repository for historical tracking'
+        description: "Persist generated property test failures back to the repository for historical tracking"
         required: false
         default: false
         type: boolean
       run-cargo-release:
-        description: 'Publish crates to Kellnr via cargo release (auto-enabled on tag push)'
+        description: "Publish crates to Kellnr via cargo release (auto-enabled on tag push)"
         required: false
         default: false
         type: boolean
@@ -87,15 +87,14 @@ env:
   # RUSTC_WRAPPER and credentials are set per-job (secrets not allowed in top-level env).
   SCCACHE_BUCKET: firmware-ci-data-7d
   SCCACHE_ENDPOINT: http://s3-prod-eq-dc.sw-ci.kraken.as:80
-  SCCACHE_S3_KEY_PREFIX: 'cache/automotive_wire_format/'
+  SCCACHE_S3_KEY_PREFIX: "cache/automotive_wire_format/"
   SCCACHE_REGION: auto
   SCCACHE_S3_USE_SSL: "false"
   # Cargo configuration variables
   CARGO_REGISTRY_DEFAULT: "kellnr"
   CARGO_REGISTRIES_KELLNR_INDEX: "sparse+http://kellnr-eq-dc.sw-ci.kraken.as/api/v1/crates/"
 
-
-# 
+#
 concurrency:
   group: >
     ${{
@@ -241,11 +240,11 @@ jobs:
     needs: [options]
     with:
       images: rust,uv_minimal,mvdoc
-      # 
+      #
       s3-project: automotive_wire_format
-      # 
+      #
       run-security-scans: ${{ needs.options.outputs.run_security_scans }}
-      extra-env: 'ferrocene_token=${{ needs.options.outputs.ferrocene_token }}'
+      extra-env: "ferrocene_token=${{ needs.options.outputs.ferrocene_token }}"
       extra-build-args: --secret id=ferrocene_token,env=ferrocene_token
 
   # =================================================================================================
@@ -709,8 +708,6 @@ jobs:
           s3-access-key: ${{ vars.LUM_CEPH_ACCESS_KEY_ID }}
           s3-secret-key: ${{ secrets.LUM_CEPH_SECRET_ACCESS_KEY }}
 
-
-
   # =================================================================================================
   # Semver Checks
   # =================================================================================================
@@ -718,7 +715,7 @@ jobs:
     name: Semver Checks
     runs-on: [x86, Linux, small]
     needs: [image-lifecycle]
-    continue-on-error: true  # Skip failures for unpublished crates without baseline
+    continue-on-error: true # Skip failures for unpublished crates without baseline
     container:
       image: ${{ fromJson(needs.image-lifecycle.outputs.data).rust.image }}
       credentials:
@@ -729,7 +726,7 @@ jobs:
     steps:
       - uses: luminartech/fw_ci/.github/actions/lum-checkout@v4
         with:
-          fetch-depth: 0  # Need full history for git-based baseline comparison
+          fetch-depth: 0 # Need full history for git-based baseline comparison
       - name: Check semver
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
@@ -905,10 +902,10 @@ jobs:
         uses: luminartech/fw_ci/.github/actions/lum-publish-files@v4
         with:
           ssh-private-key: ${{ secrets.THE_WAY_WEBSERVER_PRIVATE_KEY }}
-          rules: 'build/docs/the-way.zip:the-way'
-          index-filename: 'the_way.html'
-          summary-title: 'The Way Documentation'
-          summary-link-text: 'View The Way'
+          rules: "build/docs/the-way.zip:the-way"
+          index-filename: "the_way.html"
+          summary-title: "The Way Documentation"
+          summary-link-text: "View The Way"
           base-dir: ${{ env.PROJECT_SLUG }}
       - name: Upload The Way artifacts
         uses: luminartech/fw_ci/.github/actions/lum-upload-artifact@v4
@@ -979,7 +976,18 @@ jobs:
   qualification-evidence:
     name: Qualification Evidence
     runs-on: [x86, Linux, small]
-    needs: [image-lifecycle, unit-tests, property-tests, fuzz-tests, bench, sbom, toolchain-verification, security, options]
+    needs:
+      [
+        image-lifecycle,
+        unit-tests,
+        property-tests,
+        fuzz-tests,
+        bench,
+        sbom,
+        toolchain-verification,
+        security,
+        options,
+      ]
     if: needs.options.outputs.enable_attestation == 'true'
     permissions:
       id-token: write
@@ -1374,4 +1382,5 @@ jobs:
             release-${{ steps.version.outputs.version }}.zip
             release-${{ steps.version.outputs.version }}.sha256
             release-assets/release-manifest.json
-# 
+
+#
