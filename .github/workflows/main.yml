@@ -131,7 +131,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run tests with coverage
         run: |
-          cargo llvm-cov nextest --all-features --all-targets -E 'not test(prop_)' --lcov --output-path lcov.info
+          cargo llvm-cov nextest --all-features --all-targets -E 'not kind(test)' --lcov --output-path lcov.info
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         with:
@@ -152,7 +152,7 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
       - name: Run property tests
-        run: cargo nextest run --all-features --lib -E 'test(prop_)' --test-threads=4
+        run: cargo nextest run --all-features -E 'kind(test)' --test-threads=4
 
   # =================================================================================================
   # Fuzz Tests
@@ -174,9 +174,7 @@ jobs:
       - name: Run fuzz targets
         run: |
           MAX_TIME=${{ needs.options.outputs.comprehensive == 'true' && 60 || 6 }}
-          cargo fuzz run fuzz_request_decode -- -max_total_time=${MAX_TIME}
-          cargo fuzz run fuzz_response_decode -- -max_total_time=${MAX_TIME}
-          cargo fuzz run fuzz_roundtrip -- -max_total_time=${MAX_TIME}
+          cargo fuzz run decode_roundtrip -- -max_total_time=${MAX_TIME}
       - name: Upload fuzz artifacts on failure
         uses: actions/upload-artifact@v7
         if: failure()
@@ -226,6 +224,11 @@ jobs:
     runs-on: ubuntu-latest
     # Run on PRs (catch breaks before merge) and on main (release gate)
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # TODO: remove once automotive-wire-codec 0.1.0 is published to crates.io.
+    # cargo-semver-checks needs a published baseline to diff against; until the
+    # first release exists it errors with "not found in registry", so keep it
+    # advisory rather than blocking the initial release.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
         with:
