@@ -144,6 +144,12 @@ jobs:
           name: coverage-lcov
           path: lcov.info
           retention-days: 7
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
+          fail_ci_if_error: true
 
   # =================================================================================================
   # Property Tests
