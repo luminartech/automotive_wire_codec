@@ -232,11 +232,12 @@ jobs:
           fail_ci_if_error: true
       - name: Upload test results to Codecov
         if: '!cancelled()'
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: target/nextest/ci/junit.xml
+          files: target/nextest/ci/junit.xml
           flags: unit-tests
+          report_type: test_results
           fail_ci_if_error: true
 
   # =================================================================================================
@@ -255,11 +256,12 @@ jobs:
         run: cargo nextest run --profile ci --all-features -E 'kind(test)' --test-threads=4
       - name: Upload test results to Codecov
         if: '!cancelled()'
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: target/nextest/ci/junit.xml
+          files: target/nextest/ci/junit.xml
           flags: property-tests
+          report_type: test_results
           fail_ci_if_error: true
 
   # =================================================================================================
