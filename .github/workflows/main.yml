@@ -82,7 +82,9 @@ jobs:
   pr-title-lint:
     name: PR Title Lint
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # release-plz's own PRs (branch prefix "release-plz-") are machine-generated and
+    # don't follow the human PR template - skip both lints for them.
+    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-plz-')
     permissions:
       pull-requests: read
     steps:
@@ -108,7 +110,7 @@ jobs:
   pr-description-lint:
     name: PR Description Lint
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-plz-')
     permissions:
       pull-requests: read
     steps:
