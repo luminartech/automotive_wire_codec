@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-automotive-wire-codec = { path = "../crates/automotive_wire_codec" }
+automotive-wire-codec = { path = ".." }
 embedded-io = { version = "0.7", default-features = false }
 
 [workspace]

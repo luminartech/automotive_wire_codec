@@ -1,8 +1,8 @@
 //! Encode→decode round-trips for every leaf width, via proptest (spec §10.1).
 
 use automotive_wire_codec::{
-    read_be_uint, read_u16_be, read_u32_be, read_u64_be, read_u8, write_be_uint, write_u16_be,
-    write_u32_be, write_u64_be, write_u8,
+    read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, write_be_uint, write_u8,
+    write_u16_be, write_u32_be, write_u64_be,
 };
 use proptest::prelude::*;
 

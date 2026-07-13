@@ -62,5 +62,5 @@ mod write;
 pub use decode::{Decode, DecodeIter, DecodeIterator};
 pub use encode::Encode;
 pub use error::{Incomplete, TrailingBytes};
-pub use read::{read_array, read_be_uint, read_u16_be, read_u32_be, read_u64_be, read_u8, take};
-pub use write::{write_all, write_be_uint, write_u16_be, write_u32_be, write_u64_be, write_u8};
+pub use read::{read_array, read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, take};
+pub use write::{write_all, write_be_uint, write_u8, write_u16_be, write_u32_be, write_u64_be};

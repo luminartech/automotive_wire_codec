@@ -67,7 +67,11 @@ pub struct DecodeIterator<'a, T> {
 
 impl<'a, T> DecodeIterator<'a, T> {
     fn new(buf: &'a [u8]) -> Self {
-        Self { buf, done: false, _marker: PhantomData }
+        Self {
+            buf,
+            done: false,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -147,7 +151,11 @@ mod tests {
         fn decode_next(buf: &'a [u8]) -> Result<Option<(Self, &'a [u8])>, TestErr> {
             match buf.first() {
                 None => Ok(None),
-                Some(&0xFF) => Err(Incomplete { needed: 2, available: 1 }.into()),
+                Some(&0xFF) => Err(Incomplete {
+                    needed: 2,
+                    available: 1,
+                }
+                .into()),
                 Some(&b) => Ok(Some((Elem(b), &buf[1..]))),
             }
         }

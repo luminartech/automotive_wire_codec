@@ -9,7 +9,10 @@ use crate::error::Incomplete;
 /// [`Incomplete`] if `buf` has fewer than `n` bytes.
 pub fn take(buf: &[u8], n: usize) -> Result<(&[u8], &[u8]), Incomplete> {
     if buf.len() < n {
-        Err(Incomplete { needed: n, available: buf.len() })
+        Err(Incomplete {
+            needed: n,
+            available: buf.len(),
+        })
     } else {
         Ok(buf.split_at(n))
     }
@@ -96,7 +99,13 @@ mod tests {
     #[test]
     fn take_past_end_is_incomplete() {
         let buf = [1, 2, 3];
-        assert_eq!(take(&buf, 4), Err(Incomplete { needed: 4, available: 3 }));
+        assert_eq!(
+            take(&buf, 4),
+            Err(Incomplete {
+                needed: 4,
+                available: 3
+            })
+        );
     }
 
     #[test]
@@ -115,10 +124,34 @@ mod tests {
 
     #[test]
     fn read_helpers_one_byte_short_are_incomplete() {
-        assert_eq!(read_u8(&[]), Err(Incomplete { needed: 1, available: 0 }));
-        assert_eq!(read_u16_be(&[0]), Err(Incomplete { needed: 2, available: 1 }));
-        assert_eq!(read_u32_be(&[0; 3]), Err(Incomplete { needed: 4, available: 3 }));
-        assert_eq!(read_u64_be(&[0; 7]), Err(Incomplete { needed: 8, available: 7 }));
+        assert_eq!(
+            read_u8(&[]),
+            Err(Incomplete {
+                needed: 1,
+                available: 0
+            })
+        );
+        assert_eq!(
+            read_u16_be(&[0]),
+            Err(Incomplete {
+                needed: 2,
+                available: 1
+            })
+        );
+        assert_eq!(
+            read_u32_be(&[0; 3]),
+            Err(Incomplete {
+                needed: 4,
+                available: 3
+            })
+        );
+        assert_eq!(
+            read_u64_be(&[0; 7]),
+            Err(Incomplete {
+                needed: 8,
+                available: 7
+            })
+        );
     }
 
     #[test]
@@ -126,7 +159,13 @@ mod tests {
         let (arr, rest) = read_array::<3>(&[1, 2, 3, 4]).unwrap();
         assert_eq!(arr, [1, 2, 3]);
         assert_eq!(rest, &[4]);
-        assert_eq!(read_array::<3>(&[1, 2]), Err(Incomplete { needed: 3, available: 2 }));
+        assert_eq!(
+            read_array::<3>(&[1, 2]),
+            Err(Incomplete {
+                needed: 3,
+                available: 2
+            })
+        );
     }
 
     #[test]
@@ -134,6 +173,12 @@ mod tests {
         let (v, rest) = read_be_uint(&[0x01, 0x02, 0x03], 2).unwrap();
         assert_eq!(v, 0x0102);
         assert_eq!(rest, &[0x03]);
-        assert_eq!(read_be_uint(&[0x00], 2), Err(Incomplete { needed: 2, available: 1 }));
+        assert_eq!(
+            read_be_uint(&[0x00], 2),
+            Err(Incomplete {
+                needed: 2,
+                available: 1
+            })
+        );
     }
 }

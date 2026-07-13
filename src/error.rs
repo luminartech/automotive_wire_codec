@@ -39,13 +39,22 @@ mod tests {
 
     #[test]
     fn incomplete_display() {
-        let e = Incomplete { needed: 4, available: 1 };
-        assert_eq!(e.to_string(), "incomplete input: needed 4 bytes, 1 available");
+        let e = Incomplete {
+            needed: 4,
+            available: 1,
+        };
+        assert_eq!(
+            e.to_string(),
+            "incomplete input: needed 4 bytes, 1 available"
+        );
     }
 
     #[test]
     fn trailing_display() {
-        assert_eq!(TrailingBytes(3).to_string(), "3 trailing bytes after decode");
+        assert_eq!(
+            TrailingBytes(3).to_string(),
+            "3 trailing bytes after decode"
+        );
     }
 
     fn assert_is_error<T: core::error::Error>() {}

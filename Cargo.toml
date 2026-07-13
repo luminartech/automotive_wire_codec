@@ -1,17 +1,27 @@
-[workspace]
-members = [
-    "crates/automotive_wire_codec",
-]
-exclude = ["fuzz"]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "automotive-wire-codec"
 version = "0.1.0"
 edition = "2024"
-license = "LicenseRef-Proprietary"
-authors = []
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
 description = "Zero-copy, no_std, no-alloc binary codec traits for automotive diagnostic protocols"
-documentation = ""
+repository = "https://github.com/luminartech/automotive_wire_format"
+homepage = "https://github.com/luminartech/automotive_wire_format"
+# Root is now the crate root, so keep repo tooling out of the published tarball.
+include = [
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
-[workspace.dependencies]
+[dependencies]
+embedded-io = { version = "0.7", default-features = false }
+
+[dev-dependencies]
 proptest = "1.5"
+
+[lints.rust]
+unsafe_code = "forbid"
