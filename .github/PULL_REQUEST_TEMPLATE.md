@@ -7,7 +7,8 @@ Scope (area of the codebase), e.g., laser|rrp|sim|ci|core[0-5]|etc.
 ## Commit Message Details
 
 <!-- Describe "what" you did and "why" in a way that is useful for the historical record.
-     This sections get appended to the final commit message as the message body.
+     The squash-merge commit body defaults to blank, so paste this into the commit
+     message box when you complete the squash merge if it's worth keeping in git history.
      Can be omitted if the title is sufficient.
      Specific notes on "how" can be left as self-review comments or in "Notes". -->
 
