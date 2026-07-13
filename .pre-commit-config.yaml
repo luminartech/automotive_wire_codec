@@ -1,8 +1,26 @@
 default_language_version:
-  python: python3.12
+  python: python3.14
 default_stages: [pre-commit]
-default_install_hook_types: [pre-commit, prepare-commit-msg]
+default_install_hook_types: [pre-commit, prepare-commit-msg, commit-msg]
 repos:
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - --strict
+          - feat
+          - fix
+          - perf
+          - docs
+          - refactor
+          - revert
+          - style
+          - test
+          - chore
+          - ci
+          - build
   - repo: meta
     hooks:
       # - id: check-hooks-apply
