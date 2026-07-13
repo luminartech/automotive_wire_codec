@@ -78,10 +78,9 @@ defaults:
         {{ body }}
 
   queue_rule:
-    merge_method: merge
+    merge_method: squash
     update_method: rebase
     update_bot_account: "lumci"
-    autosquash: true
     queue_branch_prefix: mergify/merge-queue/
     batch_size: 1
     commit_message_template: |
