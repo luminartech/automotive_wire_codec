@@ -217,7 +217,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run tests with coverage
         run: |
-          cargo llvm-cov nextest --all-features --all-targets -E 'not kind(test)' --lcov --output-path lcov.info
+          cargo llvm-cov nextest --profile ci --all-features --all-targets -E 'not kind(test)' --lcov --output-path lcov.info
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         with:
@@ -229,6 +229,15 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
+          fail_ci_if_error: true
+      - name: Upload test results to Codecov
+        if: '!cancelled()'
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/nextest/ci/junit.xml
+          flags: unit-tests
+          report_type: test_results
           fail_ci_if_error: true
 
   # =================================================================================================
@@ -244,7 +253,16 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
       - name: Run property tests
-        run: cargo nextest run --all-features -E 'kind(test)' --test-threads=4
+        run: cargo nextest run --profile ci --all-features -E 'kind(test)' --test-threads=4
+      - name: Upload test results to Codecov
+        if: '!cancelled()'
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/nextest/ci/junit.xml
+          flags: property-tests
+          report_type: test_results
+          fail_ci_if_error: true
 
   # =================================================================================================
   # Fuzz Tests
