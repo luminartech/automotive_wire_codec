@@ -71,6 +71,21 @@ jobs:
           SKIP: uv-lock
 
   # =================================================================================================
+  # Commit Message Linting
+  # =================================================================================================
+  # Mergify merges (not squashes) PRs, so every individual commit lands on main and
+  # feeds release-plz's changelog generation directly — not just the PR title.
+  commitlint:
+    name: Commit Message Lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: wagoid/commitlint-github-action@v6
+
+  # =================================================================================================
   # Linting and Formatting
   # =================================================================================================
   lint:
