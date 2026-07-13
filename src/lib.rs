@@ -26,10 +26,28 @@
 //! [`Decode::decode`] consumes from the **front** of the buffer and returns the
 //! **remainder**, so nested and sequential decodes thread the remainder along:
 //!
-//! ```text
+//! ```rust
+//! # use automotive_wire_codec::{read_u8, read_u16_be, Decode, Incomplete, TrailingBytes};
+//! # struct SomeType(u8);
+//! # #[derive(Debug)]
+//! # enum DemoErr { Incomplete(Incomplete), TrailingBytes(TrailingBytes) }
+//! # impl From<Incomplete> for DemoErr { fn from(e: Incomplete) -> Self { DemoErr::Incomplete(e) } }
+//! # impl From<TrailingBytes> for DemoErr { fn from(e: TrailingBytes) -> Self { DemoErr::TrailingBytes(e) } }
+//! # impl<'a> Decode<'a> for SomeType {
+//! #     type Error = DemoErr;
+//! #     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), Self::Error> {
+//! #         let (b, rest) = read_u8(buf)?;
+//! #         Ok((SomeType(b), rest))
+//! #     }
+//! # }
+//! # fn run(buf: &[u8]) -> Result<(), DemoErr> {
 //! let (a, rest) = read_u8(buf)?;
 //! let (b, rest) = read_u16_be(rest)?;
 //! let (c, rest) = SomeType::decode(rest)?;   // nested Decode composes the same way
+//! # let _ = (a, b, c, rest);
+//! # Ok(())
+//! # }
+//! # run(&[0u8, 1, 2, 3, 4]).unwrap();
 //! ```
 //!
 //! [`Decode::decode_exact`] instead requires the whole buffer to be consumed, returning
@@ -42,13 +60,37 @@
 //! `&mut [u8]` is an [`embedded_io::Write`] sink, an outer protocol serializes an inner
 //! value directly into one buffer — no second allocation or copy:
 //!
-//! ```text
+//! ```rust
+//! # use automotive_wire_codec::{write_u32_be, Encode};
+//! # struct Header { payload_len: u32 }
+//! # impl Header {
+//! #     fn new(payload_len: u32) -> Self { Header { payload_len } }
+//! # }
+//! # impl Encode for Header {
+//! #     type Error = embedded_io::ErrorKind;
+//! #     fn encoded_size(&self) -> usize { 4 }
+//! #     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
+//! #         write_u32_be(writer, self.payload_len)
+//! #     }
+//! # }
+//! # struct Inner(u32);
+//! # impl Encode for Inner {
+//! #     type Error = embedded_io::ErrorKind;
+//! #     fn encoded_size(&self) -> usize { 4 }
+//! #     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
+//! #         write_u32_be(writer, self.0)
+//! #     }
+//! # }
+//! # let inner = Inner(42);
+//! # let mut tx_buf = [0u8; 8];
 //! let payload_len = inner.encoded_size();
-//! let header = Header::new(/* ... */, payload_len as u32);
+//! let header = Header::new(payload_len as u32);
 //!
 //! let mut writer: &mut [u8] = &mut tx_buf;       // one buffer
 //! let mut total = header.encode(&mut writer)?;   // writes header, advances `writer`
 //! total += inner.encode(&mut writer)?;           // writes inner into the remainder
+//! # assert_eq!(total, 8);
+//! # Ok::<(), embedded_io::ErrorKind>(())
 //! ```
 
 #[cfg(test)]
