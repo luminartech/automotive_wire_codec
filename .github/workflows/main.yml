@@ -194,8 +194,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
+      # taiki-e/install-action has no cargo-fuzz manifest, so this has to build from source.
       - name: Install cargo-fuzz
-        uses: taiki-e/install-action@cargo-fuzz
+        run: cargo install cargo-fuzz --locked
       - name: Build fuzz targets
         run: cargo fuzz build
       - name: Run fuzz targets
