@@ -257,12 +257,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
-      # taiki-e/install-action has no cargo-fuzz manifest, but rust-fuzz publishes
-      # prebuilt GitHub-release binaries, so fetch one via cargo-binstall instead of
-      # compiling from source (falls back to a source build only if none match).
-      - uses: taiki-e/install-action@cargo-binstall
+      # rust-fuzz only publishes a musl-linked binary for Linux, and cargo-fuzz infers
+      # its *own* build target from how it was compiled - so a binstall'd cargo-fuzz
+      # tries to build fuzz targets against x86_64-unknown-linux-musl, which isn't
+      # installed via rustup and conflicts with ASan's static-libc requirement anyway.
+      # (This passed before only because some runners happened to already have a
+      # working cargo-fuzz binary present, short-circuiting the binstall fetch.)
+      # No safe prebuilt path here, so build from source.
       - name: Install cargo-fuzz
-        run: cargo binstall cargo-fuzz --no-confirm --locked
+        run: cargo install cargo-fuzz --locked
       - name: Build fuzz targets
         run: cargo fuzz build
       - name: Run fuzz targets
