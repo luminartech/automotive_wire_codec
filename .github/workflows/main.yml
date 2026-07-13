@@ -331,7 +331,7 @@ jobs:
         security,
         docs,
       ]
-    if: github.repository == 'luminartech/automotive_wire_format' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'luminartech/automotive_wire_codec' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:
@@ -372,7 +372,7 @@ jobs:
         security,
         docs,
       ]
-    if: github.repository == 'luminartech/automotive_wire_format' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.repository == 'luminartech/automotive_wire_codec' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
       pull-requests: write

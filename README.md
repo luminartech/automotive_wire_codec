@@ -1,9 +1,9 @@
 # automotive-wire-codec
 
-[![CI](https://github.com/luminartech/automotive_wire_format/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/luminartech/automotive_wire_format/actions/workflows/main.yml)
+[![CI](https://github.com/luminartech/automotive_wire_codec/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/luminartech/automotive_wire_codec/actions/workflows/main.yml)
 [![Crates.io](https://img.shields.io/crates/v/automotive-wire-codec.svg)](https://crates.io/crates/automotive-wire-codec)
 [![docs.rs](https://img.shields.io/docsrs/automotive-wire-codec)](https://docs.rs/automotive-wire-codec)
-[![codecov](https://codecov.io/gh/luminartech/automotive_wire_format/branch/main/graph/badge.svg)](https://codecov.io/gh/luminartech/automotive_wire_format)
+[![codecov](https://codecov.io/gh/luminartech/automotive_wire_codec/branch/main/graph/badge.svg)](https://codecov.io/gh/luminartech/automotive_wire_codec)
 [![License](https://img.shields.io/crates/l/automotive-wire-codec.svg)](#license)
 
 Zero-copy, `no_std`, no-alloc binary codec traits for automotive diagnostic protocols.
