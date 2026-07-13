@@ -49,7 +49,7 @@ queue_rules:
   - name: default
     queue_conditions:
       - linear-history
-      - base=master
+      - base=main
 
   - name: LTS Branch Merge
     queue_conditions:
