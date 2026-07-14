@@ -280,7 +280,12 @@ jobs:
         with:
           toolchain: nightly
           components: miri
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # No rust-cache here: nightly rolls daily, and a cache-key miss falls back to a
+      # stale prefix-matched target/ dir from a different nightly. Cargo then trusts a
+      # fingerprint saying a dependency (e.g. embedded-io) is already built when the
+      # restored cache doesn't actually contain its artifact, so linking fails with
+      # E0463. This job is comprehensive-only (schedule/push-main/merge_group/dispatch),
+      # so it's infrequent enough that a full rebuild each time is the safer default.
       - name: Run Miri tests
         env:
           PROPTEST_DISABLE_FAILURE_PERSISTENCE: "1"
