@@ -4,6 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/automotive-wire-codec.svg)](https://crates.io/crates/automotive-wire-codec)
 [![docs.rs](https://img.shields.io/docsrs/automotive-wire-codec)](https://docs.rs/automotive-wire-codec)
 [![codecov](https://codecov.io/gh/luminartech/automotive_wire_codec/branch/main/graph/badge.svg)](https://codecov.io/gh/luminartech/automotive_wire_codec)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/luminartech/automotive_wire_codec/badge)](https://scorecard.dev/viewer/?uri=github.com/luminartech/automotive_wire_codec)
 [![License](https://img.shields.io/crates/l/automotive-wire-codec.svg)](#license)
 
 The **L0 foundation** of a layered, `no_std`, no-alloc automotive diagnostic protocol
