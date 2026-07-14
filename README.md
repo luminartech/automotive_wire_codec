@@ -204,11 +204,3 @@ Licensed under either of
 - MIT license ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.
-
-```{toctree}
----
-maxdepth: 2
-caption: Contents
----
-docs/safety/README
-```
