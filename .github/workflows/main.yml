@@ -1,7 +1,7 @@
 name: UDS Protocol CI
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
   merge_group:
   push:
     branches: [main]
@@ -34,9 +34,9 @@ jobs:
   options:
     name: Resolve CI Options
     runs-on: ubuntu-latest
-    # Labeling/unlabeling a PR only matters to pr-description-lint (the "No Issue"
-    # check) - skip the rest of the suite so a label change doesn't re-run all of CI.
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    # Label changes and PR title/description edits only matter to the PR lint jobs -
+    # skip the rest of the suite so metadata-only changes don't re-run all of CI.
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     outputs:
       comprehensive: ${{ steps.resolve.outputs.comprehensive }}
     steps:
@@ -64,7 +64,7 @@ jobs:
   pre-commit:
     name: Pre-commit Checks
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -176,7 +176,7 @@ jobs:
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -194,7 +194,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -214,7 +214,7 @@ jobs:
     name: Build no_std (bare-metal)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -230,7 +230,7 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -270,7 +270,7 @@ jobs:
   property-tests:
     name: Property Tests
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -296,7 +296,7 @@ jobs:
     name: Fuzz Tests
     runs-on: ubuntu-latest
     needs: [options]
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
@@ -352,7 +352,7 @@ jobs:
   msrv:
     name: Check MSRV
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.85.0
@@ -368,7 +368,7 @@ jobs:
     runs-on: ubuntu-latest
     # Run on PRs (catch breaks before merge) and on main (release gate)
     if: |
-      (github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      (github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     # TODO: remove once automotive-wire-codec 0.1.0 is published to crates.io.
     # cargo-semver-checks needs a published baseline to diff against; until the
@@ -389,7 +389,7 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     permissions:
       contents: read
       checks: write
@@ -408,7 +408,7 @@ jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
