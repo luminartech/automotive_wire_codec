@@ -71,12 +71,6 @@ jobs:
         with:
           python-version: "3.14"
       - uses: pre-commit/action@v3.0.1
-        # Skip uv-lock in CI: it resolves the private `the-way` dependency over
-        # SSH (git+ssh://git@github.com/luminartech/the-way), which the runner has
-        # no credentials for. To restore it, give CI read access to that repo (a
-        # token + git insteadOf rewrite) and drop this SKIP.
-        env:
-          SKIP: uv-lock
 
   # =================================================================================================
   # PR Title & Description Linting

@@ -20,10 +20,6 @@
     ],
     "assigneesFromCodeOwners": true,
     "branchPrefix": "chore/",
-    "constraints": {
-        "python": "3.11",
-        "ubuntu": "22.04"
-    },
     "labels": [
         "chore",
         "renovate"
