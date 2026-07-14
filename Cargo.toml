@@ -7,6 +7,8 @@ license = "MIT OR Apache-2.0"
 description = "Zero-copy, no_std, no-alloc binary codec traits for automotive diagnostic protocols"
 repository = "https://github.com/luminartech/automotive_wire_codec"
 homepage = "https://github.com/luminartech/automotive_wire_codec"
+keywords = ["no-std", "embedded", "automotive", "codec", "zero-copy"]
+categories = ["no-std", "no-std::no-alloc", "embedded", "encoding", "parser-implementations"]
 # Root is now the crate root, so keep repo tooling out of the published tarball.
 include = [
     "src/**/*.rs",
