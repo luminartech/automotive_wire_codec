@@ -1,9 +1,6 @@
 #![no_std]
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
-// README.md ends with a Sphinx/MyST ```{toctree} block for internal docs tooling;
-// rustdoc misreads `{toctree}` as a (malformed) doctest attribute list.
-#![allow(rustdoc::invalid_codeblock_attributes)]
 #![doc = include_str!("../README.md")]
 
 #[cfg(test)]

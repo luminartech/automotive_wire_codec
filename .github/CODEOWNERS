@@ -1,0 +1,3 @@
+# Default owners for everything in the repo. The main-branch ruleset requires
+# code-owner review, so this team is a required reviewer on every PR.
+* @luminartech/luv

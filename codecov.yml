@@ -1,0 +1,18 @@
+# Coverage gates. Unit-test coverage is uploaded by the Unit Tests CI job;
+# property tests upload results only (no coverage), so targets are calibrated
+# to the unit-test lcov report.
+coverage:
+  status:
+    # Overall coverage must not regress by more than 1% on a PR.
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    # New/changed lines in a PR must themselves be at least 80% covered.
+    patch:
+      default:
+        target: 80%
+
+comment:
+  layout: "condensed_header, diff, flags"
+  require_changes: true
