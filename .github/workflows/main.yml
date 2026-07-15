@@ -1,8 +1,8 @@
 # Thin caller for the org-wide reusable Rust CI workflow. This file owns the
 # triggers and repo-specific configuration; luminartech/rust_workflow owns the
 # jobs (pre-commit, lint, build, no_std canary, unit/property/fuzz tests,
-# miri, MSRV, semver, security audit, docs, publish dry run, the "CI OK"
-# aggregate gate, and release-plz automation).
+# miri, MSRV, semver, security audit, docs, publish dry run, and release-plz
+# automation).
 name: CI
 
 on:
@@ -23,7 +23,6 @@ on:
 permissions:
   contents: read
 
-# Concurrency is caller-owned; the reusable workflow defines none of its own.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -36,6 +35,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # For audit-check's PR annotations (use-audit-check below).
+      checks: write
     secrets:
       cargo-registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       release-plz-app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
@@ -44,6 +45,9 @@ jobs:
     with:
       # Restrict publishing to the canonical repo so forks never publish.
       publish-repository: luminartech/automotive_wire_codec
+      # Publish cargo-audit findings as a check run with PR annotations
+      # (fork PRs automatically fall back to the plain cargo-audit step).
+      use-audit-check: true
       # release-plz owns versioning, changelogs, tags, and publishing.
       use-release-plz: true
       # The crate is unconditionally no_std + no-alloc: there is no alloc
