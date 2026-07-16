@@ -79,7 +79,11 @@ pub trait Encode {
     /// migrated consumer had). Override only where a closed-form size is
     /// cheaper on a hot path; an override MUST return exactly the byte count a
     /// successful `encode` writes — nested encoders reserve space from it with
-    /// no staging buffer.
+    /// no staging buffer. Because the default runs a full `encode` pass,
+    /// methods that call both `encoded_size` and `encode` (such as
+    /// [`encode_to_slice`](Encode::encode_to_slice)) traverse the value twice
+    /// under the default, and nested length-prefix encoders compound this, so
+    /// hot paths should prefer closed-form overrides.
     ///
     /// An `encode` implementation that relies on this default must NOT call
     /// `self.encoded_size()` (infinite recursion). Calling `encoded_size()` on
@@ -110,7 +114,9 @@ pub trait Encode {
     /// `needed`/`available` ([`InsufficientBuffer`]) instead of a bare
     /// [`embedded_io::ErrorKind::WriteZero`], and hiding the
     /// `&mut &mut [u8]` cursor re-borrow every fixed-buffer call site
-    /// otherwise writes by hand.
+    /// otherwise writes by hand. Under the default [`encoded_size`](Encode::encoded_size),
+    /// the pre-check performs a full counting `encode` pass, so the value is
+    /// encoded twice per call.
     ///
     /// # Errors
     /// [`EncodeToSliceError::InsufficientBuffer`] if `buf` is smaller than

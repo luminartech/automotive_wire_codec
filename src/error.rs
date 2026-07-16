@@ -34,8 +34,8 @@ impl core::error::Error for TrailingBytes {}
 
 /// A variable-width read/write was requested with an out-of-range byte width.
 ///
-/// Returned (via `ReadUintError` /
-/// `WriteUintError`) instead of panicking, so a
+/// Returned (via [`ReadUintError`](crate::ReadUintError) /
+/// [`WriteUintError`](crate::WriteUintError)) instead of panicking, so a
 /// wire-controlled width is a recoverable *data* error, not a programming error.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidWidth {
@@ -48,7 +48,7 @@ pub struct InvalidWidth {
 /// An output slice was too small for the bytes an encode needed to write.
 ///
 /// Encode-side mirror of [`Incomplete`]. Constructed by
-/// `Encode::encode_to_slice`, where both
+/// [`Encode::encode_to_slice`](crate::Encode::encode_to_slice), where both
 /// counts are knowable; generic [`embedded_io::Write`] sinks cannot report
 /// capacity, so they surface [`embedded_io::ErrorKind::WriteZero`] instead.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

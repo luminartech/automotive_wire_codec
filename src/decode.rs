@@ -260,5 +260,35 @@ mod tests {
         it.next(); // consumes the only element
         it.next(); // Ok(None) -> done
         assert_eq!(it.remaining_len(), Some(0));
+
+        // Error path: a 5-byte buffer holds one full 3-byte record plus a
+        // 2-byte partial one. The first `next()` consumes the full record;
+        // the second hits the partial tail and `read_array::<3>` reports
+        // `Err(Incomplete)`. `remaining_len()` must still report `Some(0)`
+        // once the iterator has fused on the error.
+        let partial = [0u8; 5];
+        let mut it = Fixed3::iter(&partial);
+        assert!(matches!(it.next(), Some(Ok(Fixed3(_)))));
+        assert!(matches!(it.next(), Some(Err(TestErr::Incomplete(_)))));
+        assert_eq!(it.remaining_len(), Some(0));
+    }
+
+    // A zero-WIRE_SIZE element: the contract requires WIRE_SIZE to be
+    // non-zero if `Some`, but `remaining_len` defends against a violation
+    // anyway (a zero stride would otherwise divide-by-zero / loop forever).
+    #[derive(Debug, PartialEq)]
+    struct ZeroWidth;
+    impl<'a> DecodeIter<'a> for ZeroWidth {
+        type Error = TestErr;
+        const WIRE_SIZE: Option<usize> = Some(0);
+        fn decode_next(_buf: &'a [u8]) -> Result<Option<(Self, &'a [u8])>, TestErr> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn remaining_len_is_none_for_zero_wire_size_guard() {
+        let it = ZeroWidth::iter(&[]);
+        assert_eq!(it.remaining_len(), None);
     }
 }
