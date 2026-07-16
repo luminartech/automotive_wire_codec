@@ -18,7 +18,8 @@ nothing else: no framing, no concrete message types, no owned forms, no `alloc`.
   allocation, no intermediate copies.
 - **`no_std` / no-alloc** — builds on bare-metal targets (verified in CI against
   `thumbv6m-none-eabi`).
-- **Nested encode without a staging buffer** — \[`Encode::encoded_size`\] is exact, so an
+- **Nested encode without a staging buffer** — \[`Encode::encoded_size`\] is exact and
+  correct by construction (the default counts bytes through an infallible sink), so an
   outer protocol can size a header and serialize an inner value directly into the same
   buffer.
 - **Generic, ergonomic errors** — L1 crates keep their own rich error enum; leaf helpers
@@ -84,7 +85,6 @@ impl Header {
 }
 impl Encode for Header {
     type Error = embedded_io::ErrorKind;
-    fn encoded_size(&self) -> usize { 4 }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         write_u32_be(writer, self.payload_len)
     }
@@ -92,14 +92,13 @@ impl Encode for Header {
 struct Inner(u32);
 impl Encode for Inner {
     type Error = embedded_io::ErrorKind;
-    fn encoded_size(&self) -> usize { 4 }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         write_u32_be(writer, self.0)
     }
 }
 let inner = Inner(42);
 let mut tx_buf = [0u8; 8];
-let payload_len = inner.encoded_size();
+let payload_len = inner.encoded_size()?;
 let header = Header::new(payload_len as u32);
 
 let mut writer: &mut [u8] = &mut tx_buf;       // one buffer
@@ -160,9 +159,6 @@ impl<'a> Decode<'a> for Ping {
 
 impl Encode for Ping {
     type Error = PingError;
-    fn encoded_size(&self) -> usize {
-        2
-    }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         Ok(write_u16_be(writer, self.session_id)?)
     }

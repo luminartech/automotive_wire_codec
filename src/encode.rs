@@ -47,14 +47,36 @@ pub trait Encode {
 
     /// Exact number of bytes [`encode`](Encode::encode) will write.
     ///
-    /// MUST equal the byte count returned by a successful `encode`. This is a hard
-    /// invariant — nested encoders rely on it to reserve space without a staging buffer.
-    fn encoded_size(&self) -> usize;
+    /// The default runs `encode` against an infallible [`CountingSink`] and
+    /// returns the bytes actually written — correct by construction, so
+    /// hand-maintained sizes cannot drift from `encode` (the bug class every
+    /// migrated consumer had). Override only where a closed-form size is
+    /// cheaper on a hot path; an override MUST return exactly the byte count a
+    /// successful `encode` writes — nested encoders reserve space from it with
+    /// no staging buffer.
+    ///
+    /// An `encode` implementation that relies on this default must NOT call
+    /// `self.encoded_size()` (infinite recursion). Calling `encoded_size()` on
+    /// *nested fields* is fine, and is the intended pre-sizing pattern.
+    ///
+    /// # Errors
+    /// Whatever `encode` returns for a value that cannot be encoded; the
+    /// counting sink itself never fails.
+    fn encoded_size(&self) -> Result<usize, Self::Error> {
+        let mut sink = CountingSink::new();
+        let reported = self.encode(&mut sink)?;
+        debug_assert!(
+            reported == sink.count(),
+            "encode returned {reported} but wrote {} bytes",
+            sink.count()
+        );
+        Ok(sink.count())
+    }
 
     /// Serialize into `writer`; return the number of bytes written.
     ///
     /// # Errors
-    /// `Self::Error` if the sink rejects a write.
+    /// `Self::Error` if the sink rejects a write or the value cannot be encoded.
     fn encode(&self, writer: &mut impl Write) -> Result<usize, Self::Error>;
 }
 
@@ -76,8 +98,8 @@ mod tests {
     struct Val(u16);
     impl Encode for Val {
         type Error = TestErr;
-        fn encoded_size(&self) -> usize {
-            2
+        fn encoded_size(&self) -> Result<usize, TestErr> {
+            Ok(2)
         }
         fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, TestErr> {
             Ok(write_u16_be(writer, self.0)?)
@@ -90,7 +112,7 @@ mod tests {
         let mut buf = [0u8; 4];
         let mut w: &mut [u8] = &mut buf;
         let n = v.encode(&mut w).unwrap();
-        assert_eq!(n, v.encoded_size());
+        assert_eq!(n, v.encoded_size().unwrap());
         assert_eq!(&buf[..2], &[0xAB, 0xCD]);
     }
 
@@ -117,5 +139,42 @@ mod tests {
         // Accumulates across encodes.
         Val(0x0102).encode(&mut sink).unwrap();
         assert_eq!(sink.count(), 4);
+    }
+
+    // Uses the default encoded_size — no hand-written size at all.
+    struct TwoVals(u16, u16);
+    impl Encode for TwoVals {
+        type Error = TestErr;
+        fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, TestErr> {
+            let mut n = write_u16_be(writer, self.0)?;
+            n += write_u16_be(writer, self.1)?;
+            Ok(n)
+        }
+    }
+
+    // Encode fails for a VALUE reason (uds C1 shape): default encoded_size
+    // must surface it as Err, not panic.
+    struct Rejecting;
+    impl Encode for Rejecting {
+        type Error = TestErr;
+        fn encode(&self, _writer: &mut impl embedded_io::Write) -> Result<usize, TestErr> {
+            Err(TestErr::Io(embedded_io::ErrorKind::InvalidData))
+        }
+    }
+
+    #[test]
+    fn default_encoded_size_counts_actual_bytes() {
+        assert_eq!(TwoVals(1, 2).encoded_size().unwrap(), 4);
+    }
+
+    #[test]
+    fn default_encoded_size_surfaces_value_errors() {
+        assert!(Rejecting.encoded_size().is_err());
+    }
+
+    #[test]
+    fn override_still_supported() {
+        // Val overrides encoded_size with a closed form (see impl above).
+        assert_eq!(Val(0xABCD).encoded_size().unwrap(), 2);
     }
 }
