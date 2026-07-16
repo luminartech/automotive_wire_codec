@@ -59,7 +59,10 @@ only safe when the wire format has no redundant-encoding freedom.
 - **`encoded_size()` is `Result` and exact.** The default (counting sink) is
   correct by construction. If you override, `written == encoded_size()?` is a
   hard invariant — the strictness is a feature; it has caught real
-  compensating size bugs at migration time.
+  compensating size bugs at migration time. Do NOT drop your override if
+  `encode` calls `self.encoded_size()` (self-length prefixes): the default
+  runs `encode` to count, so that pair recurses infinitely. Keep closed-form
+  overrides there and on hot paths (the default costs a full encode pass).
 - **Per-element iterator errors.** `DecodeIterator` surfaces a malformed
   element as `Some(Err(_))` and then fuses (yields `None` forever). Iterators
   that silently stopped on truncation, or that repeated the same error forever,

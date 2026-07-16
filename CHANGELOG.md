@@ -7,17 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 0.3.0 - 2026-07-15
+## [0.3.0](https://github.com/luminartech/automotive_wire_codec/compare/v0.2.0...v0.3.0) - 2026-07-15
 
 Addresses the aggregated migration feedback from the uds, doip, and someip
-protocol crates (see `feedback/` for the source catalogs).
+protocol crates.
 
 ### Breaking
 
 - `Encode::encoded_size` now returns `Result<usize, Self::Error>` and has a
   correct-by-construction default that counts bytes through `CountingSink`.
   Existing overrides: wrap the returned size in `Ok(..)` — or delete the
-  override and take the default.
+  override and take the default. **Caveat:** do NOT delete the override if
+  your `encode` calls `self.encoded_size()` (e.g. to write a self-length
+  prefix) — the default is implemented by running `encode` against a
+  counting sink, so that combination recurses infinitely at runtime.
+  Keep a closed-form override for such types (and for hot paths, where the
+  counting default means sizing costs a full encode pass).
 - `read_be_uint` returns `Result<_, ReadUintError>` and `write_be_uint`
   returns `Result<_, WriteUintError>`: width is now a checked *data* error
   (`InvalidWidth`) in all build profiles. This also fixes a release-build
