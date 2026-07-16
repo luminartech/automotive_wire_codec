@@ -127,9 +127,15 @@ impl<'a, T: DecodeIter<'a>> Iterator for DecodeIterator<'a, T> {
 }
 
 impl<'a, T: DecodeIter<'a>> DecodeIterator<'a, T> {
-    /// Remaining element count, when [`T::WIRE_SIZE`](DecodeIter::WIRE_SIZE)
+    /// Remaining item count, when [`T::WIRE_SIZE`](DecodeIter::WIRE_SIZE)
     /// is fixed. `None` for variable-width elements (or a zero `WIRE_SIZE`);
     /// `Some(0)` once the iterator has terminated.
+    ///
+    /// This counts *items* [`next`](Iterator::next) will yield, not complete
+    /// elements: a partial trailing element (buffer length not a multiple of
+    /// the stride) counts as one remaining item, because `next` will surface
+    /// it as `Err(Incomplete)`. `Some(0)` therefore always means `next`
+    /// returns `None` — it never hides a truncated tail.
     #[must_use]
     pub fn remaining_len(&self) -> Option<usize> {
         let w = T::WIRE_SIZE?;
@@ -139,7 +145,7 @@ impl<'a, T: DecodeIter<'a>> DecodeIterator<'a, T> {
         if self.done {
             return Some(0);
         }
-        Some(self.buf.len() / w)
+        Some(self.buf.len().div_ceil(w))
     }
 }
 
@@ -251,6 +257,26 @@ mod tests {
         // Elem (above) keeps the default WIRE_SIZE = None.
         let it = Elem::iter(&[1, 2, 3]);
         assert_eq!(it.remaining_len(), None);
+    }
+
+    #[test]
+    fn remaining_len_counts_partial_tail_as_one_item() {
+        // A partial trailing element still produces one more item from the
+        // iterator (an Err(Incomplete)), so it must count as 1, not round
+        // down to 0 — Some(0) is reserved for "next() returns None".
+        let truncated = [0u8; 2]; // less than one 3-byte record
+        let it = Fixed3::iter(&truncated);
+        assert_eq!(it.remaining_len(), Some(1));
+
+        // One full record plus a 2-byte partial tail: 2 items remain
+        // (1 Ok + 1 Err), not 1.
+        let partial = [0u8; 5];
+        let mut it = Fixed3::iter(&partial);
+        assert_eq!(it.remaining_len(), Some(2));
+        assert!(matches!(it.next(), Some(Ok(Fixed3(_)))));
+        assert_eq!(it.remaining_len(), Some(1));
+        assert!(matches!(it.next(), Some(Err(TestErr::Incomplete(_)))));
+        assert_eq!(it.remaining_len(), Some(0));
     }
 
     #[test]
