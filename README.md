@@ -235,6 +235,8 @@ including the \[`DecodeIter`\] trait for repeated elements, the variable-width
 \[`read_be_uint`\]/\[`read_be_uint_into`\] helpers, and
 \[`Encode::encode_to_slice`\] for fixed-buffer encoding.
 
+Migrating a protocol crate onto these traits? See [MIGRATION.md](MIGRATION.md).
+
 ## `no_std`
 
 This crate is `no_std` and does not require `alloc`. `unsafe_code` is forbidden
