@@ -12,7 +12,7 @@ mod error;
 mod read;
 mod write;
 pub use decode::{Decode, DecodeIter, DecodeIterator};
-pub use encode::{CountingSink, Encode};
+pub use encode::{CountingSink, Encode, EncodeToSliceError};
 pub use error::{Incomplete, InsufficientBuffer, InvalidWidth, TrailingBytes};
 pub use read::{
     BeUint, ReadUintError, ensure_len, read_array, read_be_uint, read_be_uint_into,
