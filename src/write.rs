@@ -1,7 +1,12 @@
 //! Big-endian, `core`-only write helpers over [`embedded_io::Write`]. Each returns the
 //! number of bytes written. `embedded_io::Write for &mut [u8]` advances the slice and
 //! errors (never panics) when the slice is exhausted, so encoding into a too-small
-//! stack buffer surfaces as a recoverable `Err`.
+//! stack buffer surfaces as a recoverable `Err` — specifically
+//! [`embedded_io::ErrorKind::WriteZero`], which carries no needed/available counts
+//! (a generic sink cannot know its capacity). For counted diagnostics encode via
+//! [`Encode::encode_to_slice`](crate::Encode::encode_to_slice), which pre-checks
+//! [`Encode::encoded_size`](crate::Encode::encoded_size) and returns
+//! [`InsufficientBuffer`](crate::InsufficientBuffer).
 
 use crate::error::InvalidWidth;
 use embedded_io::{Error, Write};

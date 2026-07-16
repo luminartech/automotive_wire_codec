@@ -21,6 +21,11 @@ pub trait Decode<'a>: Sized {
     /// Decode requiring the ENTIRE buffer to be consumed. Use this at a message
     /// boundary where the length is already known.
     ///
+    /// Do NOT use it where a buffer may legally hold more than one message
+    /// (e.g. a multi-message datagram): there, trailing bytes are the *next*
+    /// message, not an error — use [`decode`](Decode::decode) and thread the
+    /// remainder.
+    ///
     /// # Errors
     /// [`TrailingBytes`] (via `Self::Error`) if bytes remain, plus anything
     /// [`decode`](Decode::decode) can return.
@@ -49,6 +54,23 @@ pub trait DecodeIter<'a>: Sized {
     ///
     /// Returns `Ok(Some((value, rest)))` for an element, `Ok(None)` for a clean end
     /// (buffer empty / no more elements), or `Err(_)` for malformed input.
+    ///
+    /// **Convention — check for the clean end BEFORE attempting to decode an
+    /// element.** Exhaustion must be `Ok(None)`, never
+    /// `Err(Incomplete { available: 0, .. })`: a `decode_next` that delegates
+    /// straight to a [`Decode`] impl will wrongly turn an empty buffer into an
+    /// error. The reference shape is:
+    ///
+    /// ```text
+    /// if buf.is_empty() { return Ok(None); }
+    /// Decode::decode(buf).map(Some)
+    /// ```
+    ///
+    /// A *partial* element after a good start IS a real error — surfacing it
+    /// (rather than silently stopping) is deliberate; the adapter fuses after
+    /// the first `Err`. Consumers migrating from silent-truncation iterators
+    /// should treat the newly surfaced error as the correct behavior and keep
+    /// any pre-validated fast path on a separate infallible iterator.
     ///
     /// # Errors
     /// `Self::Error` if the next element is malformed.
