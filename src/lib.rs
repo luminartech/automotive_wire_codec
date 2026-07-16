@@ -15,6 +15,8 @@ pub use decode::{Decode, DecodeIter, DecodeIterator};
 pub use encode::Encode;
 pub use error::{Incomplete, InsufficientBuffer, InvalidWidth, TrailingBytes};
 pub use read::{
-    read_array, read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, take, ReadUintError,
+    ReadUintError, read_array, read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, take,
 };
-pub use write::{write_all, write_be_uint, write_u8, write_u16_be, write_u32_be, write_u64_be};
+pub use write::{
+    WriteUintError, write_all, write_be_uint, write_u8, write_u16_be, write_u32_be, write_u64_be,
+};

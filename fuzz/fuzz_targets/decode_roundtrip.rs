@@ -31,8 +31,10 @@ fuzz_target!(|data: &[u8]| {
     assert_eq!(decoded, v);
     assert!(rest.is_empty());
 
-    // write_be_uint must never panic for n <= 16 with a big-enough sink.
+    // write_be_uint must never panic for ANY n — hostile widths return Err.
     let mut wide = [0u8; 16];
     let mut ww: &mut [u8] = &mut wide;
     let _ = write_be_uint(&mut ww, u128::from(v), 2);
+    let mut ww2: &mut [u8] = &mut wide;
+    let _ = write_be_uint(&mut ww2, u128::from(v), usize::from(data.first().copied().unwrap_or(0)));
 });

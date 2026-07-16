@@ -230,7 +230,10 @@ mod tests {
         );
         assert_eq!(
             read_be_uint(&buf, 17),
-            Err(ReadUintError::InvalidWidth(InvalidWidth { max: 16, got: 17 }))
+            Err(ReadUintError::InvalidWidth(InvalidWidth {
+                max: 16,
+                got: 17
+            }))
         );
     }
 

@@ -3,6 +3,7 @@
 //! errors (never panics) when the slice is exhausted, so encoding into a too-small
 //! stack buffer surfaces as a recoverable `Err`.
 
+use crate::error::InvalidWidth;
 use embedded_io::{Error, Write};
 
 /// Write a single byte. Returns `1`.
@@ -41,21 +42,52 @@ pub fn write_u64_be(w: &mut impl Write, v: u64) -> Result<usize, embedded_io::Er
     Ok(8)
 }
 
-/// Write the low `n` bytes (`1..=16`) of `value`, big-endian. Returns `n`.
+/// Error from the variable-width write helper ([`write_be_uint`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WriteUintError {
+    /// The sink rejected a write.
+    Io(embedded_io::ErrorKind),
+    /// Requested width out of range for the operation.
+    InvalidWidth(InvalidWidth),
+}
+
+impl From<embedded_io::ErrorKind> for WriteUintError {
+    fn from(e: embedded_io::ErrorKind) -> Self {
+        WriteUintError::Io(e)
+    }
+}
+impl From<InvalidWidth> for WriteUintError {
+    fn from(e: InvalidWidth) -> Self {
+        WriteUintError::InvalidWidth(e)
+    }
+}
+impl core::fmt::Display for WriteUintError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            WriteUintError::Io(kind) => write!(f, "write failed: {kind:?}"),
+            WriteUintError::InvalidWidth(e) => e.fmt(f),
+        }
+    }
+}
+impl core::error::Error for WriteUintError {}
+
+/// Write the low `n` bytes (`0..=16`) of `value`, big-endian. Returns `n`.
+///
+/// The width may come straight off the wire: an out-of-range `n` is a *data*
+/// error ([`InvalidWidth`]), not a panic, in every build profile. `n == 0` is
+/// legal and writes nothing. Bytes of `value` above the low `n` are ignored;
+/// use `minimal_be_len` to compute the width that loses nothing.
 ///
 /// # Errors
-/// The sink's [`embedded_io::ErrorKind`] if the write fails.
-///
-/// # Panics
-/// In debug builds, panics if `n > 16`.
-pub fn write_be_uint(
-    w: &mut impl Write,
-    value: u128,
-    n: usize,
-) -> Result<usize, embedded_io::ErrorKind> {
-    debug_assert!(n <= 16, "write_be_uint: n must be <= 16");
+/// [`WriteUintError::InvalidWidth`] if `n > 16`; [`WriteUintError::Io`] if the
+/// sink rejects the write.
+pub fn write_be_uint(w: &mut impl Write, value: u128, n: usize) -> Result<usize, WriteUintError> {
+    if n > 16 {
+        return Err(InvalidWidth { max: 16, got: n }.into());
+    }
     let bytes = value.to_be_bytes(); // 16 bytes, big-endian
-    w.write_all(&bytes[16 - n..]).map_err(|e| e.kind())?;
+    w.write_all(&bytes[16 - n..])
+        .map_err(|e| WriteUintError::from(e.kind()))?;
     Ok(n)
 }
 
@@ -71,6 +103,7 @@ pub fn write_all(w: &mut impl Write, bytes: &[u8]) -> Result<usize, embedded_io:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::InvalidWidth;
 
     #[test]
     fn write_u16_be_writes_big_endian_and_counts() {
@@ -105,5 +138,28 @@ mod tests {
         let mut buf = [0u8; 1];
         let mut w: &mut [u8] = &mut buf;
         assert!(write_u16_be(&mut w, 0x1234).is_err());
+    }
+
+    #[test]
+    fn write_be_uint_hostile_width_is_data_error_not_panic() {
+        // SE-1 write half: previously `16 - n` underflowed and PANICKED in
+        // release builds. Must now be a recoverable error in all profiles.
+        let mut buf = [0u8; 300];
+        let mut w: &mut [u8] = &mut buf;
+        assert_eq!(
+            write_be_uint(&mut w, 0xABCD, 255),
+            Err(WriteUintError::InvalidWidth(InvalidWidth {
+                max: 16,
+                got: 255
+            }))
+        );
+    }
+
+    #[test]
+    fn write_be_uint_zero_width_writes_nothing() {
+        let mut buf = [0xFFu8; 2];
+        let mut w: &mut [u8] = &mut buf;
+        assert_eq!(write_be_uint(&mut w, 0xABCD, 0).unwrap(), 0);
+        assert_eq!(buf, [0xFF, 0xFF]);
     }
 }
