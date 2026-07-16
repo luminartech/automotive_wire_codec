@@ -40,6 +40,11 @@ pub trait DecodeIter<'a>: Sized {
     /// Per-implementation error; constructible from [`Incomplete`].
     type Error: From<Incomplete>;
 
+    /// Wire size of one element, when fixed at compile time (must be non-zero
+    /// if `Some`). Enables [`DecodeIterator::remaining_len`] for fixed-stride
+    /// record streams. Default: `None` (variable-width).
+    const WIRE_SIZE: Option<usize> = None;
+
     /// Decode the next element from the front of `buf`.
     ///
     /// Returns `Ok(Some((value, rest)))` for an element, `Ok(None)` for a clean end
@@ -96,6 +101,23 @@ impl<'a, T: DecodeIter<'a>> Iterator for DecodeIterator<'a, T> {
                 Some(Err(e))
             }
         }
+    }
+}
+
+impl<'a, T: DecodeIter<'a>> DecodeIterator<'a, T> {
+    /// Remaining element count, when [`T::WIRE_SIZE`](DecodeIter::WIRE_SIZE)
+    /// is fixed. `None` for variable-width elements (or a zero `WIRE_SIZE`);
+    /// `Some(0)` once the iterator has terminated.
+    #[must_use]
+    pub fn remaining_len(&self) -> Option<usize> {
+        let w = T::WIRE_SIZE?;
+        if w == 0 {
+            return None;
+        }
+        if self.done {
+            return Some(0);
+        }
+        Some(self.buf.len() / w)
     }
 }
 
@@ -176,5 +198,45 @@ mod tests {
         assert!(matches!(it.next(), Some(Ok(Elem(1)))));
         assert!(matches!(it.next(), Some(Err(TestErr::Incomplete(_)))));
         assert!(it.next().is_none());
+    }
+
+    // A 3-byte fixed-stride element advertising WIRE_SIZE (SE-2 shape: DTC record).
+    #[derive(Debug, PartialEq)]
+    struct Fixed3([u8; 3]);
+    impl<'a> DecodeIter<'a> for Fixed3 {
+        type Error = TestErr;
+        const WIRE_SIZE: Option<usize> = Some(3);
+        fn decode_next(buf: &'a [u8]) -> Result<Option<(Self, &'a [u8])>, TestErr> {
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            let (b, rest) = crate::read::read_array::<3>(buf)?;
+            Ok(Some((Fixed3(b), rest)))
+        }
+    }
+
+    #[test]
+    fn remaining_len_reports_count_for_fixed_stride() {
+        let buf = [0u8; 12];
+        let mut it = Fixed3::iter(&buf);
+        assert_eq!(it.remaining_len(), Some(4));
+        it.next();
+        assert_eq!(it.remaining_len(), Some(3));
+    }
+
+    #[test]
+    fn remaining_len_is_none_for_variable_width() {
+        // Elem (above) keeps the default WIRE_SIZE = None.
+        let it = Elem::iter(&[1, 2, 3]);
+        assert_eq!(it.remaining_len(), None);
+    }
+
+    #[test]
+    fn remaining_len_is_zero_after_exhaustion_or_error() {
+        let buf = [0u8; 3];
+        let mut it = Fixed3::iter(&buf);
+        it.next(); // consumes the only element
+        it.next(); // Ok(None) -> done
+        assert_eq!(it.remaining_len(), Some(0));
     }
 }
