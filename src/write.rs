@@ -85,9 +85,9 @@ impl core::fmt::Display for WriteUintError {
 }
 impl core::error::Error for WriteUintError {}
 
-/// Minimal number of big-endian bytes needed to represent `value` —
-/// the encode-side twin of [`read_be_uint`](crate::read_be_uint), for
-/// protocols that emit minimal-width length/size/address fields.
+/// Minimal number of big-endian bytes needed to represent `value` — computes
+/// the width to pass to [`write_be_uint`] for protocols that emit
+/// minimal-width length/size/address fields.
 ///
 /// `minimal_be_len(0) == 0`; protocols that require at least one byte apply
 /// `.max(1)`. The result is always `<= 16`, so it is a valid width for

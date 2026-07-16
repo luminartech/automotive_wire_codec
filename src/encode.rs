@@ -98,6 +98,11 @@ pub trait Encode {
     /// # Errors
     /// Whatever `encode` returns for a value that cannot be encoded; the
     /// counting sink itself never fails.
+    ///
+    /// # Panics
+    /// In debug builds, if `encode` returns a byte count different from the
+    /// bytes it actually wrote — that is a bug in the `encode` impl
+    /// (`written == encoded_size()?` is a hard invariant).
     fn encoded_size(&self) -> Result<usize, Self::Error> {
         let mut sink = CountingSink::new();
         let reported = self.encode(&mut sink)?;

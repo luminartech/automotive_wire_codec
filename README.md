@@ -85,6 +85,7 @@ impl Header {
 }
 impl Encode for Header {
     type Error = embedded_io::ErrorKind;
+    fn encoded_size(&self) -> Result<usize, Self::Error> { Ok(4) }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         write_u32_be(writer, self.payload_len)
     }
@@ -92,6 +93,7 @@ impl Encode for Header {
 struct Inner(u32);
 impl Encode for Inner {
     type Error = embedded_io::ErrorKind;
+    fn encoded_size(&self) -> Result<usize, Self::Error> { Ok(4) }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         write_u32_be(writer, self.0)
     }
@@ -107,6 +109,11 @@ total += inner.encode(&mut writer)?;           // writes inner into the remainde
 assert_eq!(total, 8);
 Ok::<(), embedded_io::ErrorKind>(())
 ```
+
+The closed-form `encoded_size` overrides matter here: the *default*
+`encoded_size` counts by running `encode` against a counting sink, so sizing a
+nested message with the default re-encodes each subtree once per level. Keep
+closed-form overrides on types used for length-prefix pre-sizing.
 
 ## Consumer idioms
 
@@ -235,7 +242,8 @@ including the \[`DecodeIter`\] trait for repeated elements, the variable-width
 \[`read_be_uint`\]/\[`read_be_uint_into`\] helpers, and
 \[`Encode::encode_to_slice`\] for fixed-buffer encoding.
 
-Migrating a protocol crate onto these traits? See [MIGRATION.md](MIGRATION.md).
+Migrating a protocol crate onto these traits? See
+[MIGRATION.md](https://github.com/luminartech/automotive_wire_codec/blob/main/MIGRATION.md).
 
 ## `no_std`
 
