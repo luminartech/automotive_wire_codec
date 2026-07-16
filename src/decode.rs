@@ -9,7 +9,15 @@ use crate::error::{Incomplete, TrailingBytes};
 /// `buf` lives.
 pub trait Decode<'a>: Sized {
     /// Per-implementation error; constructible from [`Incomplete`] and [`TrailingBytes`]
-    /// so the leaf read helpers and the `decode_exact` default lift through `?`.
+    /// so the fixed-width leaf read helpers (`read_u8`, `read_u16_be`,
+    /// `read_array`, …) and the `decode_exact` default lift through `?`.
+    ///
+    /// The variable-width helpers [`read_be_uint`](crate::read_be_uint) and
+    /// [`read_be_uint_into`](crate::read_be_uint_into) return
+    /// [`ReadUintError`](crate::ReadUintError) instead; to call them inside
+    /// `decode` with `?`, additionally implement
+    /// `From<ReadUintError>` for your error (match both arms — see the
+    /// error pattern in `MIGRATION.md`).
     type Error: From<Incomplete> + From<TrailingBytes>;
 
     /// Decode from the FRONT of `buf`; return `(value, unconsumed_remainder)`.
@@ -42,7 +50,10 @@ pub trait Decode<'a>: Sized {
 /// RX-side: decode a sequence of same-typed elements from a buffer. Implement this only
 /// for protocols that have repeated elements (e.g. a UDS DTC record list).
 pub trait DecodeIter<'a>: Sized {
-    /// Per-implementation error; constructible from [`Incomplete`].
+    /// Per-implementation error; constructible from [`Incomplete`] so the
+    /// fixed-width leaf read helpers lift through `?`. As with
+    /// [`Decode::Error`], the variable-width helpers return
+    /// [`ReadUintError`](crate::ReadUintError) and need their own `From` impl.
     type Error: From<Incomplete>;
 
     /// Wire size of one element, when fixed at compile time (must be non-zero

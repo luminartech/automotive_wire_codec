@@ -68,7 +68,13 @@ impl Write for CountingSink {
 /// TX-side: serialize `self` into an [`embedded_io::Write`] sink.
 pub trait Encode {
     /// Per-implementation error; constructible from an I/O [`embedded_io::ErrorKind`]
-    /// so the `write_*` leaf helpers lift through `?`.
+    /// so the fixed-width `write_*` leaf helpers lift through `?`.
+    ///
+    /// The variable-width helper [`write_be_uint`](crate::write_be_uint)
+    /// returns [`WriteUintError`](crate::WriteUintError) instead; to call it
+    /// inside `encode` with `?`, additionally implement
+    /// `From<WriteUintError>` for your error (match both arms — see the
+    /// error pattern in `MIGRATION.md`).
     type Error: From<embedded_io::ErrorKind>;
 
     /// Exact number of bytes [`encode`](Encode::encode) will write.
