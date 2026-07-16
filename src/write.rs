@@ -103,8 +103,15 @@ pub const fn minimal_be_len(value: u128) -> usize {
 ///
 /// The width may come straight off the wire: an out-of-range `n` is a *data*
 /// error ([`InvalidWidth`]), not a panic, in every build profile. `n == 0` is
-/// legal and writes nothing. Bytes of `value` above the low `n` are ignored;
-/// use `minimal_be_len` to compute the width that loses nothing.
+/// legal and writes nothing.
+///
+/// **This helper does not check that `value` fits in `n` bytes.** Bytes of
+/// `value` above the low `n` are silently dropped: if
+/// `minimal_be_len(value) > n`, the emitted field decodes to a *different*
+/// value (e.g. `write_be_uint(w, 0x1_0000, 2)` writes `[0x00, 0x00]`, which
+/// reads back as `0`). Callers emitting a field whose value can grow — length
+/// prefixes especially — must validate `minimal_be_len(value) <= n` before
+/// writing, or compute the width with [`minimal_be_len`] so nothing is lost.
 ///
 /// # Errors
 /// [`WriteUintError::InvalidWidth`] if `n > 16`; [`WriteUintError::Io`] if the
@@ -211,6 +218,18 @@ mod tests {
         assert_eq!(minimal_be_len(0x1_0000), 3);
         assert_eq!(minimal_be_len(u128::from(u64::MAX)), 8);
         assert_eq!(minimal_be_len(u128::MAX), 16);
+    }
+
+    #[test]
+    fn write_be_uint_truncates_value_wider_than_n() {
+        // Characterization of the documented contract: the helper does NOT
+        // check minimality — an over-wide value is silently truncated to its
+        // low n bytes and round-trips to a different value. Callers guard
+        // with minimal_be_len(value) <= n.
+        let mut buf = [0xEEu8; 4];
+        let mut w: &mut [u8] = &mut buf;
+        assert_eq!(write_be_uint(&mut w, 0x1_0000, 2).unwrap(), 2);
+        assert_eq!(&buf[..2], &[0x00, 0x00]); // high byte dropped, reads back as 0
     }
 
     #[test]
