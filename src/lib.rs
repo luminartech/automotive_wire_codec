@@ -19,6 +19,6 @@ pub use read::{
     read_optional_array, read_u8, read_u16_be, read_u32_be, read_u64_be, read_u128_be, take,
 };
 pub use write::{
-    WriteUintError, write_all, write_be_uint, write_u8, write_u16_be, write_u32_be, write_u64_be,
-    write_u128_be,
+    WriteUintError, minimal_be_len, write_all, write_be_uint, write_u8, write_u16_be, write_u32_be,
+    write_u64_be, write_u128_be,
 };
