@@ -86,10 +86,9 @@ pub trait Encode {
     /// cheaper on a hot path; an override MUST return exactly the byte count a
     /// successful `encode` writes — nested encoders reserve space from it with
     /// no staging buffer. Because the default runs a full `encode` pass,
-    /// methods that call both `encoded_size` and `encode` (such as
-    /// [`encode_to_slice`](Encode::encode_to_slice)) traverse the value twice
-    /// under the default, and nested length-prefix encoders compound this, so
-    /// hot paths should prefer closed-form overrides.
+    /// call sites that size before encoding (nested length-prefix encoders,
+    /// which compound per level) traverse the value once per size query under
+    /// the default, so hot paths should prefer closed-form overrides.
     ///
     /// An `encode` implementation that relies on this default must NOT call
     /// `self.encoded_size()` (infinite recursion). Calling `encoded_size()` on
@@ -120,30 +119,39 @@ pub trait Encode {
     /// `Self::Error` if the sink rejects a write or the value cannot be encoded.
     fn encode(&self, writer: &mut impl Write) -> Result<usize, Self::Error>;
 
-    /// Encode into a fixed slice, pre-checking capacity against
-    /// [`encoded_size`](Encode::encoded_size) so a too-small buffer reports
-    /// `needed`/`available` ([`InsufficientBuffer`]) instead of a bare
-    /// [`embedded_io::ErrorKind::WriteZero`], and hiding the
-    /// `&mut &mut [u8]` cursor re-borrow every fixed-buffer call site
-    /// otherwise writes by hand. Under the default [`encoded_size`](Encode::encoded_size),
-    /// the pre-check performs a full counting `encode` pass, so the value is
-    /// encoded twice per call.
+    /// Encode into a fixed slice, reporting `needed`/`available`
+    /// ([`InsufficientBuffer`]) instead of a bare
+    /// [`embedded_io::ErrorKind::WriteZero`] when the slice is too small, and
+    /// hiding the `&mut &mut [u8]` cursor re-borrow every fixed-buffer call
+    /// site otherwise writes by hand.
+    ///
+    /// The success path is a single `encode` pass —
+    /// [`encoded_size`](Encode::encoded_size) is consulted only after a
+    /// failed encode, to classify the error. On error, `buf` may hold
+    /// partially written bytes; on success, bytes past the returned count are
+    /// untouched.
     ///
     /// # Errors
     /// [`EncodeToSliceError::InsufficientBuffer`] if `buf` is smaller than
-    /// `encoded_size()`; [`EncodeToSliceError::Encode`] if sizing or encoding
-    /// itself fails.
+    /// `encoded_size()`; [`EncodeToSliceError::Encode`] if encoding itself
+    /// fails.
     fn encode_to_slice(&self, buf: &mut [u8]) -> Result<usize, EncodeToSliceError<Self::Error>> {
-        let needed = self.encoded_size().map_err(EncodeToSliceError::Encode)?;
-        if buf.len() < needed {
-            return Err(InsufficientBuffer {
-                needed,
-                available: buf.len(),
-            }
-            .into());
-        }
+        let available = buf.len();
         let mut cursor: &mut [u8] = buf;
-        self.encode(&mut cursor).map_err(EncodeToSliceError::Encode)
+        match self.encode(&mut cursor) {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                // Distinguish "slice too small" from a value error. If sizing
+                // itself fails, the value is unencodable — report the
+                // original encode error.
+                match self.encoded_size() {
+                    Ok(needed) if available < needed => {
+                        Err(InsufficientBuffer { needed, available }.into())
+                    }
+                    _ => Err(EncodeToSliceError::Encode(e)),
+                }
+            }
+        }
     }
 }
 
@@ -260,6 +268,45 @@ mod tests {
         // someip F5: needed/available diagnostics, not a bare WriteZero.
         let mut buf = [0u8; 1];
         let err = Val(0xABCD).encode_to_slice(&mut buf).unwrap_err();
+        assert!(matches!(
+            err,
+            EncodeToSliceError::InsufficientBuffer(InsufficientBuffer {
+                needed: 2,
+                available: 1
+            })
+        ));
+    }
+
+    // Counts encode() invocations; uses the default (counting) encoded_size.
+    struct CountsEncodes<'a>(&'a core::cell::Cell<u32>);
+    impl Encode for CountsEncodes<'_> {
+        type Error = TestErr;
+        fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, TestErr> {
+            self.0.set(self.0.get() + 1);
+            Ok(write_u16_be(writer, 0xABCD)?)
+        }
+    }
+
+    #[test]
+    fn encode_to_slice_success_is_single_pass() {
+        // Under the default encoded_size (which encodes into a counting
+        // sink), a successful encode_to_slice must not pay a sizing pass:
+        // encode() runs exactly once per frame on the hot path.
+        let calls = core::cell::Cell::new(0);
+        let mut buf = [0u8; 4];
+        let n = CountsEncodes(&calls).encode_to_slice(&mut buf).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(&buf[..2], &[0xAB, 0xCD]);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn encode_to_slice_too_small_reports_counts_with_default_size() {
+        // The needed/available diagnostics survive the single-pass rewrite
+        // even for types relying on the default encoded_size.
+        let calls = core::cell::Cell::new(0);
+        let mut buf = [0u8; 1];
+        let err = CountsEncodes(&calls).encode_to_slice(&mut buf).unwrap_err();
         assert!(matches!(
             err,
             EncodeToSliceError::InsufficientBuffer(InsufficientBuffer {

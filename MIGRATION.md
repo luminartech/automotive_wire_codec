@@ -84,6 +84,7 @@ only safe when the wire format has no redundant-encoding freedom.
 
 ## Fixed-buffer encoding
 
-Use `value.encode_to_slice(&mut buf)?` — it pre-checks `encoded_size()` and
-reports `InsufficientBuffer { needed, available }`. Encoding through a raw
+Use `value.encode_to_slice(&mut buf)?` — a too-small buffer reports
+`InsufficientBuffer { needed, available }` (sized via `encoded_size()` on the
+failure path only; success is a single encode pass). Encoding through a raw
 `&mut [u8]` sink instead surfaces plain `ErrorKind::WriteZero` with no counts.
