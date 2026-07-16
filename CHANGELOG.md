@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.3.0 - 2026-07-15
+
+Addresses the aggregated migration feedback from the uds, doip, and someip
+protocol crates (see `feedback/` for the source catalogs).
+
+### Breaking
+
+- `Encode::encoded_size` now returns `Result<usize, Self::Error>` and has a
+  correct-by-construction default that counts bytes through `CountingSink`.
+  Existing overrides: wrap the returned size in `Ok(..)` — or delete the
+  override and take the default.
+- `read_be_uint` returns `Result<_, ReadUintError>` and `write_be_uint`
+  returns `Result<_, WriteUintError>`: width is now a checked *data* error
+  (`InvalidWidth`) in all build profiles. This also fixes a release-build
+  panic in `write_be_uint` for `n > 16` (slice-index underflow).
+
+### Added
+
+- `Encode::encode_to_slice` default method + `EncodeToSliceError` +
+  `InsufficientBuffer` fragment: fixed-buffer encoding with
+  `needed`/`available` diagnostics and no `&mut &mut [u8]` dance.
+- `CountingSink`: infallible byte-counting `embedded_io::Write` sink.
+- `read_be_uint_into::<T>`: typed variable-width reader validating the width
+  against the target type (no `as` casts at call sites).
+- `read_u128_be` / `write_u128_be`, `ensure_len`, `read_optional_array`,
+  `minimal_be_len` leaf helpers.
+- `DecodeIter::WIRE_SIZE` (opt-in) + `DecodeIterator::remaining_len` for
+  fixed-stride record streams.
+
+### Documentation
+
+- `decode_exact` multi-message boundary warning; `DecodeIter::decode_next`
+  clean-end convention; `WriteZero` semantics on exhausted slice sinks.
+- README "Consumer idioms" section (framing, dispatch, validated views,
+  length prefixes, slice-first rationale).
+- `MIGRATION.md`: error-pattern, E0446 trap, dual-trait coexistence,
+  impl-placement for private-field types, behavior-change audit list.
+
 ## [0.2.0](https://github.com/luminartech/automotive_wire_codec/compare/v0.1.1...v0.2.0) - 2026-07-14
 
 ### Added

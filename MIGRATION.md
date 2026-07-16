@@ -61,7 +61,7 @@ only safe when the wire format has no redundant-encoding freedom.
   hard invariant — the strictness is a feature; it has caught real
   compensating size bugs at migration time.
 - **Per-element iterator errors.** `DecodeIterator` surfaces a malformed
-  element as `Some(Err(_))` and then fuses ( yields `None` forever). Iterators
+  element as `Some(Err(_))` and then fuses (yields `None` forever). Iterators
   that silently stopped on truncation, or that repeated the same error forever,
   change observable behavior — audit callers.
 - **Per-field `Incomplete` counts.** Chained leaf reads report
