@@ -91,11 +91,12 @@ impl core::error::Error for WriteUintError {}
 ///
 /// `minimal_be_len(0) == 0`; protocols that require at least one byte apply
 /// `.max(1)`. The result is always `<= 16`, so it is a valid width for
-/// [`write_be_uint`].
+/// [`write_be_uint`], and it is `usize` so
+/// `write_be_uint(w, v, minimal_be_len(v))` needs no cast at the call site.
 #[must_use]
 #[allow(clippy::cast_possible_truncation)] // result is 0..=16
-pub const fn minimal_be_len(value: u128) -> u8 {
-    (u128::BITS - value.leading_zeros()).div_ceil(8) as u8
+pub const fn minimal_be_len(value: u128) -> usize {
+    (u128::BITS - value.leading_zeros()).div_ceil(8) as usize
 }
 
 /// Write the low `n` bytes (`0..=16`) of `value`, big-endian. Returns `n`.
@@ -214,13 +215,14 @@ mod tests {
 
     #[test]
     fn minimal_be_len_pairs_with_write_be_uint() {
-        // The minimal width loses nothing on a write/read round trip.
+        // The minimal width loses nothing on a write/read round trip, and the
+        // advertised idiom needs no cast at the call site.
         let v = 0x00AB_CDEF_u128;
-        let n = usize::from(minimal_be_len(v));
+        let n = minimal_be_len(v);
         assert_eq!(n, 3);
         let mut buf = [0u8; 16];
         let mut w: &mut [u8] = &mut buf;
-        assert_eq!(write_be_uint(&mut w, v, n).unwrap(), n);
+        assert_eq!(write_be_uint(&mut w, v, minimal_be_len(v)).unwrap(), n);
         assert_eq!(&buf[..n], &[0xAB, 0xCD, 0xEF]);
     }
 }
