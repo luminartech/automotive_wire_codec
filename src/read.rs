@@ -178,6 +178,42 @@ pub fn read_be_uint_into<T: BeUint>(buf: &[u8], n: usize) -> Result<(T, &[u8]), 
     Ok((T::from_u128(v), rest))
 }
 
+/// `Ok(())` if `buf` has at least `needed` bytes, else [`Incomplete`].
+///
+/// The check-only form of [`take`]: use it before an aggregate read whose
+/// parts you slice manually.
+///
+/// # Errors
+/// [`Incomplete`] if `buf` has fewer than `needed` bytes.
+#[inline]
+pub fn ensure_len(buf: &[u8], needed: usize) -> Result<(), Incomplete> {
+    if buf.len() < needed {
+        Err(Incomplete {
+            needed,
+            available: buf.len(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+/// Read an optional fixed-size trailing array: `Some` + remainder when `N`
+/// bytes are present, `(None, buf)` (buffer untouched) when they are not.
+///
+/// "Not enough bytes" is the `None` case, not an error — this helper is for
+/// fields a protocol defines as legitimately absent at the tail (e.g. `DoIP`'s
+/// optional 4-byte OEM fields). A *partial* tail (`1..N` bytes) also returns
+/// `None` and leaves the bytes in place, so a subsequent
+/// [`Decode::decode_exact`](crate::Decode::decode_exact) surfaces them as
+/// [`TrailingBytes`](crate::TrailingBytes).
+#[must_use]
+pub fn read_optional_array<const N: usize>(buf: &[u8]) -> (Option<[u8; N]>, &[u8]) {
+    match read_array::<N>(buf) {
+        Ok((arr, rest)) => (Some(arr), rest),
+        Err(_) => (None, buf),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +386,36 @@ mod tests {
                 available: 15
             })
         );
+    }
+
+    #[test]
+    fn ensure_len_passes_and_fails_with_counts() {
+        assert_eq!(ensure_len(&[1, 2, 3], 3), Ok(()));
+        assert_eq!(ensure_len(&[1, 2, 3], 2), Ok(()));
+        assert_eq!(
+            ensure_len(&[1, 2, 3], 4),
+            Err(Incomplete {
+                needed: 4,
+                available: 3
+            })
+        );
+    }
+
+    #[test]
+    fn read_optional_array_present_and_absent() {
+        // doip P2: "not enough bytes" IS the None case, not an error.
+        let (arr, rest) = read_optional_array::<4>(&[1, 2, 3, 4, 5]);
+        assert_eq!(arr, Some([1, 2, 3, 4]));
+        assert_eq!(rest, &[5]);
+
+        let (arr, rest) = read_optional_array::<4>(&[]);
+        assert_eq!(arr, None);
+        assert!(rest.is_empty());
+
+        // Partial tail: None, buffer untouched — a following decode_exact
+        // will surface the stragglers as TrailingBytes.
+        let (arr, rest) = read_optional_array::<4>(&[1, 2]);
+        assert_eq!(arr, None);
+        assert_eq!(rest, &[1, 2]);
     }
 }
