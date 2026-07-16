@@ -59,6 +59,15 @@ pub fn read_u64_be(buf: &[u8]) -> Result<(u64, &[u8]), Incomplete> {
     ))
 }
 
+/// Read a big-endian `u128`.
+///
+/// # Errors
+/// [`Incomplete`] if fewer than 16 bytes remain.
+pub fn read_u128_be(buf: &[u8]) -> Result<(u128, &[u8]), Incomplete> {
+    let (arr, rest) = read_array::<16>(buf)?;
+    Ok((u128::from_be_bytes(arr), rest))
+}
+
 /// Read a fixed-size `N`-byte array (e.g. a 17-byte VIN, a 6-byte EID).
 ///
 /// # Errors
@@ -322,5 +331,24 @@ mod tests {
         assert!(rest.is_empty());
         let (b, _) = read_be_uint_into::<u8>(&buf, 1).unwrap();
         assert_eq!(b, 0xDE);
+    }
+
+    #[test]
+    fn read_u128_be_reads_full_width() {
+        let v = 0x0102_0304_0506_0708_090A_0B0C_0D0E_0F10_u128;
+        let bytes = v.to_be_bytes();
+        let mut buf = [0u8; 17];
+        buf[..16].copy_from_slice(&bytes);
+        buf[16] = 0xFF;
+        let (got, rest) = read_u128_be(&buf).unwrap();
+        assert_eq!(got, v);
+        assert_eq!(rest, &[0xFF]);
+        assert_eq!(
+            read_u128_be(&[0u8; 15]),
+            Err(Incomplete {
+                needed: 16,
+                available: 15
+            })
+        );
     }
 }

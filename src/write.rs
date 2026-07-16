@@ -42,6 +42,15 @@ pub fn write_u64_be(w: &mut impl Write, v: u64) -> Result<usize, embedded_io::Er
     Ok(8)
 }
 
+/// Write a big-endian `u128`. Returns `16`.
+///
+/// # Errors
+/// The sink's [`embedded_io::ErrorKind`] if the write fails.
+pub fn write_u128_be(w: &mut impl Write, v: u128) -> Result<usize, embedded_io::ErrorKind> {
+    w.write_all(&v.to_be_bytes()).map_err(|e| e.kind())?;
+    Ok(16)
+}
+
 /// Error from the variable-width write helper ([`write_be_uint`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WriteUintError {
@@ -161,5 +170,14 @@ mod tests {
         let mut w: &mut [u8] = &mut buf;
         assert_eq!(write_be_uint(&mut w, 0xABCD, 0).unwrap(), 0);
         assert_eq!(buf, [0xFF, 0xFF]);
+    }
+
+    #[test]
+    fn write_u128_be_writes_big_endian_and_counts() {
+        let v = 0x0102_0304_0506_0708_090A_0B0C_0D0E_0F10_u128;
+        let mut buf = [0u8; 16];
+        let mut w: &mut [u8] = &mut buf;
+        assert_eq!(write_u128_be(&mut w, v).unwrap(), 16);
+        assert_eq!(buf, v.to_be_bytes());
     }
 }
