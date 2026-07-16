@@ -1,7 +1,7 @@
 //! Big-endian, `core`-only slice read helpers. Each returns `(value, remainder)` so
 //! callers thread the remainder through sequential/nested decodes.
 
-use crate::error::Incomplete;
+use crate::error::{Incomplete, InvalidWidth};
 
 /// Split `n` bytes off the front of `buf`, returning `(head, tail)`.
 ///
@@ -68,15 +68,50 @@ pub fn read_array<const N: usize>(buf: &[u8]) -> Result<([u8; N], &[u8]), Incomp
     Ok((arr, rest))
 }
 
-/// Read a variable-width (`1..=16` byte) big-endian unsigned integer into a `u128`.
+/// Error from the variable-width read helpers ([`read_be_uint`],
+/// `read_be_uint_into`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReadUintError {
+    /// Not enough input bytes.
+    Incomplete(Incomplete),
+    /// Requested width out of range for the operation.
+    InvalidWidth(InvalidWidth),
+}
+
+impl From<Incomplete> for ReadUintError {
+    fn from(e: Incomplete) -> Self {
+        ReadUintError::Incomplete(e)
+    }
+}
+impl From<InvalidWidth> for ReadUintError {
+    fn from(e: InvalidWidth) -> Self {
+        ReadUintError::InvalidWidth(e)
+    }
+}
+impl core::fmt::Display for ReadUintError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ReadUintError::Incomplete(e) => e.fmt(f),
+            ReadUintError::InvalidWidth(e) => e.fmt(f),
+        }
+    }
+}
+impl core::error::Error for ReadUintError {}
+
+/// Read a variable-width (`0..=16` byte) big-endian unsigned integer into a `u128`.
+///
+/// The width may come straight off the wire: an out-of-range `n` is a *data*
+/// error ([`InvalidWidth`]), not a panic, in every build profile. `n == 0` is
+/// legal: it reads nothing and returns `0` (protocols that require a minimum
+/// width of 1 must validate that upstream).
 ///
 /// # Errors
-/// [`Incomplete`] if fewer than `n` bytes remain.
-///
-/// # Panics
-/// In debug builds, panics if `n > 16`; that is a programming error, not a data error.
-pub fn read_be_uint(buf: &[u8], n: usize) -> Result<(u128, &[u8]), Incomplete> {
-    debug_assert!(n <= 16, "read_be_uint: n must be <= 16");
+/// [`ReadUintError::InvalidWidth`] if `n > 16`;
+/// [`ReadUintError::Incomplete`] if fewer than `n` bytes remain.
+pub fn read_be_uint(buf: &[u8], n: usize) -> Result<(u128, &[u8]), ReadUintError> {
+    if n > 16 {
+        return Err(InvalidWidth { max: 16, got: n }.into());
+    }
     let (b, rest) = take(buf, n)?;
     let mut acc: u128 = 0;
     for &byte in b {
@@ -175,10 +210,36 @@ mod tests {
         assert_eq!(rest, &[0x03]);
         assert_eq!(
             read_be_uint(&[0x00], 2),
-            Err(Incomplete {
+            Err(ReadUintError::Incomplete(Incomplete {
                 needed: 2,
                 available: 1
-            })
+            }))
         );
+    }
+
+    #[test]
+    fn read_be_uint_hostile_width_is_data_error_not_panic() {
+        // SE-1: n > 16 must be a recoverable error in ALL build profiles.
+        let buf = [0u8; 300];
+        assert_eq!(
+            read_be_uint(&buf, 255),
+            Err(ReadUintError::InvalidWidth(InvalidWidth {
+                max: 16,
+                got: 255
+            }))
+        );
+        assert_eq!(
+            read_be_uint(&buf, 17),
+            Err(ReadUintError::InvalidWidth(InvalidWidth { max: 16, got: 17 }))
+        );
+    }
+
+    #[test]
+    fn read_be_uint_zero_width_reads_nothing() {
+        // Documented contract: n == 0 is legal, reads nothing, returns 0.
+        let buf = [0xAA, 0xBB];
+        let (v, rest) = read_be_uint(&buf, 0).unwrap();
+        assert_eq!(v, 0);
+        assert_eq!(rest, &buf);
     }
 }

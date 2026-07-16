@@ -15,8 +15,8 @@ fuzz_target!(|data: &[u8]| {
     let _ = read_u64_be(data);
     let _ = read_array::<4>(data);
     if let Some(&first) = data.first() {
-        // n in 0..=16, within the debug_assert bound.
-        let _ = read_be_uint(data, usize::from(first % 17));
+        // Any width, including hostile > 16: must return Err, never panic.
+        let _ = read_be_uint(data, usize::from(first));
     }
 
     // Round-trip: encode a u16 derived from the input and decode it back.
