@@ -18,7 +18,8 @@ nothing else: no framing, no concrete message types, no owned forms, no `alloc`.
   allocation, no intermediate copies.
 - **`no_std` / no-alloc** — builds on bare-metal targets (verified in CI against
   `thumbv6m-none-eabi`).
-- **Nested encode without a staging buffer** — \[`Encode::encoded_size`\] is exact, so an
+- **Nested encode without a staging buffer** — \[`Encode::encoded_size`\] is exact and
+  correct by construction (the default counts bytes through an infallible sink), so an
   outer protocol can size a header and serialize an inner value directly into the same
   buffer.
 - **Generic, ergonomic errors** — L1 crates keep their own rich error enum; leaf helpers
@@ -84,7 +85,7 @@ impl Header {
 }
 impl Encode for Header {
     type Error = embedded_io::ErrorKind;
-    fn encoded_size(&self) -> usize { 4 }
+    fn encoded_size(&self) -> Result<usize, Self::Error> { Ok(4) }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         write_u32_be(writer, self.payload_len)
     }
@@ -92,14 +93,14 @@ impl Encode for Header {
 struct Inner(u32);
 impl Encode for Inner {
     type Error = embedded_io::ErrorKind;
-    fn encoded_size(&self) -> usize { 4 }
+    fn encoded_size(&self) -> Result<usize, Self::Error> { Ok(4) }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         write_u32_be(writer, self.0)
     }
 }
 let inner = Inner(42);
 let mut tx_buf = [0u8; 8];
-let payload_len = inner.encoded_size();
+let payload_len = inner.encoded_size()?;
 let header = Header::new(payload_len as u32);
 
 let mut writer: &mut [u8] = &mut tx_buf;       // one buffer
@@ -108,6 +109,64 @@ total += inner.encode(&mut writer)?;           // writes inner into the remainde
 assert_eq!(total, 8);
 Ok::<(), embedded_io::ErrorKind>(())
 ```
+
+The closed-form `encoded_size` overrides matter here: the *default*
+`encoded_size` counts by running `encode` against a counting sink, so sizing a
+nested message with the default re-encodes each subtree once per level. Keep
+closed-form overrides on types used for length-prefix pre-sizing.
+
+## Consumer idioms
+
+Patterns every protocol crate on this codec ends up needing. They are
+conventions, not API — codified here so each consumer doesn't re-derive them.
+
+### Framing: decode a fixed header, re-slice the length-prefixed payload
+
+A sans-io framer decodes the fixed-size header, then slices the payload out of
+the remainder using the header's length field:
+
+```text
+let (header, rest) = Header::decode(buf)?;          // fixed-size prefix
+let payload_len = header.payload_length as usize;
+let payload = rest.get(..payload_len)               // delimit by declared length
+    .ok_or(Incomplete { needed: payload_len, available: rest.len() })?;
+let remainder = &rest[payload_len..];               // start of the next frame
+```
+
+### Dispatch: self-identifying vs externally-discriminated payloads
+
+`Decode` deliberately is not a dispatch mechanism. Two standard shapes:
+
+- **Self-identifying (open set):** the discriminant is the first byte(s) of the
+  buffer. Write an inherent `fn decode(buf) -> Result<Self, E>` on the enum that
+  reads the tag and delegates; unknown tags decode to a catch-all variant.
+- **Externally discriminated:** the tag lives in a sibling structure (e.g. a
+  header's payload-type field) and is stripped before the payload bytes are
+  seen. Write `fn decode(buf: &[u8], tag: PayloadType) -> Result<Self, E>` —
+  a trait method cannot express dispatch-by-external-tag, and should not try.
+
+### Validated views: validate once, then re-slice
+
+A validated (L2) view over a lazy decode layer should not re-run fallible
+decodes on every accessor. Construct-time: drain `DecodeIter::iter()` once,
+surfacing the first error; cache counts/offsets. Accessors: re-slice the
+already-validated bytes with purpose-built infallible iterators. The typed
+`Decode`/`DecodeIter` layer is the *validation* pass, not the hot path.
+
+### Length prefixes: precompute, then one linear pass
+
+When a length field precedes the bytes it measures, compute it from
+`encoded_size()` *before* writing — sizes here are pure functions of the value,
+so no backfill pass is needed (see the nested-encode example above).
+Size-changing post-hoc transforms (encode, then rewrite bytes to a different
+length — e.g. an E2E protect step) are deliberately out of scope for `Encode`;
+model those as a consumer-owned two-phase API.
+
+### Why slice-first (no `Read`-based decode)
+
+Decoding through a streaming `Read` cannot produce
+`Incomplete { needed, available }` — a reader doesn't know `available` until it
+has consumed the stream. Buffer first, then decode the slice.
 
 ## Usage
 
@@ -160,9 +219,6 @@ impl<'a> Decode<'a> for Ping {
 
 impl Encode for Ping {
     type Error = PingError;
-    fn encoded_size(&self) -> usize {
-        2
-    }
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
         Ok(write_u16_be(writer, self.session_id)?)
     }
@@ -182,8 +238,12 @@ fn main() -> Result<(), PingError> {
 ```
 
 See the [crate docs](https://docs.rs/automotive-wire-codec) for the full API,
-including the \[`DecodeIter`\] trait for repeated elements and the variable-width
-\[`read_be_uint`\] helper.
+including the \[`DecodeIter`\] trait for repeated elements, the variable-width
+\[`read_be_uint`\]/\[`read_be_uint_into`\] helpers, and
+\[`Encode::encode_to_slice`\] for fixed-buffer encoding.
+
+Migrating a protocol crate onto these traits? See
+[MIGRATION.md](https://github.com/luminartech/automotive_wire_codec/blob/main/MIGRATION.md).
 
 ## `no_std`
 

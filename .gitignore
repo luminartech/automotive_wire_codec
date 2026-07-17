@@ -323,8 +323,7 @@ Testing/
 # CycloneDX SBOMs
 **/*.cdx*
 
-# Fuzz corpus
-fuzz/corpus/
+# Fuzz crash artifacts (the seed corpus in fuzz/corpus/ IS tracked)
 fuzz/artifacts/
 
 # Local-only design/process docs (not version controlled)

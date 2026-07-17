@@ -1,8 +1,8 @@
 //! Encode→decode round-trips for every leaf width, via proptest (spec §10.1).
 
 use automotive_wire_codec::{
-    read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, write_be_uint, write_u8,
-    write_u16_be, write_u32_be, write_u64_be,
+    read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, read_u128_be, write_be_uint,
+    write_u8, write_u16_be, write_u32_be, write_u64_be, write_u128_be,
 };
 use proptest::prelude::*;
 
@@ -44,6 +44,16 @@ proptest! {
         let mut w: &mut [u8] = &mut buf;
         prop_assert_eq!(write_u64_be(&mut w, v).unwrap(), 8);
         let (got, rest) = read_u64_be(&buf).unwrap();
+        prop_assert_eq!(got, v);
+        prop_assert!(rest.is_empty());
+    }
+
+    #[test]
+    fn roundtrip_u128(v: u128) {
+        let mut buf = [0u8; 16];
+        let mut w: &mut [u8] = &mut buf;
+        prop_assert_eq!(write_u128_be(&mut w, v).unwrap(), 16);
+        let (got, rest) = read_u128_be(&buf).unwrap();
         prop_assert_eq!(got, v);
         prop_assert!(rest.is_empty());
     }

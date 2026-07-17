@@ -9,7 +9,15 @@ use crate::error::{Incomplete, TrailingBytes};
 /// `buf` lives.
 pub trait Decode<'a>: Sized {
     /// Per-implementation error; constructible from [`Incomplete`] and [`TrailingBytes`]
-    /// so the leaf read helpers and the `decode_exact` default lift through `?`.
+    /// so the fixed-width leaf read helpers (`read_u8`, `read_u16_be`,
+    /// `read_array`, …) and the `decode_exact` default lift through `?`.
+    ///
+    /// The variable-width helpers [`read_be_uint`](crate::read_be_uint) and
+    /// [`read_be_uint_into`](crate::read_be_uint_into) return
+    /// [`ReadUintError`](crate::ReadUintError) instead; to call them inside
+    /// `decode` with `?`, additionally implement
+    /// `From<ReadUintError>` for your error (match both arms — see the
+    /// error pattern in `MIGRATION.md`).
     type Error: From<Incomplete> + From<TrailingBytes>;
 
     /// Decode from the FRONT of `buf`; return `(value, unconsumed_remainder)`.
@@ -20,6 +28,11 @@ pub trait Decode<'a>: Sized {
 
     /// Decode requiring the ENTIRE buffer to be consumed. Use this at a message
     /// boundary where the length is already known.
+    ///
+    /// Do NOT use it where a buffer may legally hold more than one message
+    /// (e.g. a multi-message datagram): there, trailing bytes are the *next*
+    /// message, not an error — use [`decode`](Decode::decode) and thread the
+    /// remainder.
     ///
     /// # Errors
     /// [`TrailingBytes`] (via `Self::Error`) if bytes remain, plus anything
@@ -37,13 +50,38 @@ pub trait Decode<'a>: Sized {
 /// RX-side: decode a sequence of same-typed elements from a buffer. Implement this only
 /// for protocols that have repeated elements (e.g. a UDS DTC record list).
 pub trait DecodeIter<'a>: Sized {
-    /// Per-implementation error; constructible from [`Incomplete`].
+    /// Per-implementation error; constructible from [`Incomplete`] so the
+    /// fixed-width leaf read helpers lift through `?`. As with
+    /// [`Decode::Error`], the variable-width helpers return
+    /// [`ReadUintError`](crate::ReadUintError) and need their own `From` impl.
     type Error: From<Incomplete>;
+
+    /// Wire size of one element, when fixed at compile time (must be non-zero
+    /// if `Some`). Enables [`DecodeIterator::remaining_len`] for fixed-stride
+    /// record streams. Default: `None` (variable-width).
+    const WIRE_SIZE: Option<usize> = None;
 
     /// Decode the next element from the front of `buf`.
     ///
     /// Returns `Ok(Some((value, rest)))` for an element, `Ok(None)` for a clean end
     /// (buffer empty / no more elements), or `Err(_)` for malformed input.
+    ///
+    /// **Convention — check for the clean end BEFORE attempting to decode an
+    /// element.** Exhaustion must be `Ok(None)`, never
+    /// `Err(Incomplete { available: 0, .. })`: a `decode_next` that delegates
+    /// straight to a [`Decode`] impl will wrongly turn an empty buffer into an
+    /// error. The reference shape is:
+    ///
+    /// ```text
+    /// if buf.is_empty() { return Ok(None); }
+    /// Decode::decode(buf).map(Some)
+    /// ```
+    ///
+    /// A *partial* element after a good start IS a real error — surfacing it
+    /// (rather than silently stopping) is deliberate; the adapter fuses after
+    /// the first `Err`. Consumers migrating from silent-truncation iterators
+    /// should treat the newly surfaced error as the correct behavior and keep
+    /// any pre-validated fast path on a separate infallible iterator.
     ///
     /// # Errors
     /// `Self::Error` if the next element is malformed.
@@ -96,6 +134,29 @@ impl<'a, T: DecodeIter<'a>> Iterator for DecodeIterator<'a, T> {
                 Some(Err(e))
             }
         }
+    }
+}
+
+impl<'a, T: DecodeIter<'a>> DecodeIterator<'a, T> {
+    /// Remaining item count, when [`T::WIRE_SIZE`](DecodeIter::WIRE_SIZE)
+    /// is fixed. `None` for variable-width elements (or a zero `WIRE_SIZE`);
+    /// `Some(0)` once the iterator has terminated.
+    ///
+    /// This counts *items* [`next`](Iterator::next) will yield, not complete
+    /// elements: a partial trailing element (buffer length not a multiple of
+    /// the stride) counts as one remaining item, because `next` will surface
+    /// it as `Err(Incomplete)`. `Some(0)` therefore always means `next`
+    /// returns `None` — it never hides a truncated tail.
+    #[must_use]
+    pub fn remaining_len(&self) -> Option<usize> {
+        let w = T::WIRE_SIZE?;
+        if w == 0 {
+            return None;
+        }
+        if self.done {
+            return Some(0);
+        }
+        Some(self.buf.len().div_ceil(w))
     }
 }
 
@@ -176,5 +237,95 @@ mod tests {
         assert!(matches!(it.next(), Some(Ok(Elem(1)))));
         assert!(matches!(it.next(), Some(Err(TestErr::Incomplete(_)))));
         assert!(it.next().is_none());
+    }
+
+    // A 3-byte fixed-stride element advertising WIRE_SIZE (SE-2 shape: DTC record).
+    #[derive(Debug, PartialEq)]
+    struct Fixed3([u8; 3]);
+    impl<'a> DecodeIter<'a> for Fixed3 {
+        type Error = TestErr;
+        const WIRE_SIZE: Option<usize> = Some(3);
+        fn decode_next(buf: &'a [u8]) -> Result<Option<(Self, &'a [u8])>, TestErr> {
+            if buf.is_empty() {
+                return Ok(None);
+            }
+            let (b, rest) = crate::read::read_array::<3>(buf)?;
+            Ok(Some((Fixed3(b), rest)))
+        }
+    }
+
+    #[test]
+    fn remaining_len_reports_count_for_fixed_stride() {
+        let buf = [0u8; 12];
+        let mut it = Fixed3::iter(&buf);
+        assert_eq!(it.remaining_len(), Some(4));
+        it.next();
+        assert_eq!(it.remaining_len(), Some(3));
+    }
+
+    #[test]
+    fn remaining_len_is_none_for_variable_width() {
+        // Elem (above) keeps the default WIRE_SIZE = None.
+        let it = Elem::iter(&[1, 2, 3]);
+        assert_eq!(it.remaining_len(), None);
+    }
+
+    #[test]
+    fn remaining_len_counts_partial_tail_as_one_item() {
+        // A partial trailing element still produces one more item from the
+        // iterator (an Err(Incomplete)), so it must count as 1, not round
+        // down to 0 — Some(0) is reserved for "next() returns None".
+        let truncated = [0u8; 2]; // less than one 3-byte record
+        let it = Fixed3::iter(&truncated);
+        assert_eq!(it.remaining_len(), Some(1));
+
+        // One full record plus a 2-byte partial tail: 2 items remain
+        // (1 Ok + 1 Err), not 1.
+        let partial = [0u8; 5];
+        let mut it = Fixed3::iter(&partial);
+        assert_eq!(it.remaining_len(), Some(2));
+        assert!(matches!(it.next(), Some(Ok(Fixed3(_)))));
+        assert_eq!(it.remaining_len(), Some(1));
+        assert!(matches!(it.next(), Some(Err(TestErr::Incomplete(_)))));
+        assert_eq!(it.remaining_len(), Some(0));
+    }
+
+    #[test]
+    fn remaining_len_is_zero_after_exhaustion_or_error() {
+        let buf = [0u8; 3];
+        let mut it = Fixed3::iter(&buf);
+        it.next(); // consumes the only element
+        it.next(); // Ok(None) -> done
+        assert_eq!(it.remaining_len(), Some(0));
+
+        // Error path: a 5-byte buffer holds one full 3-byte record plus a
+        // 2-byte partial one. The first `next()` consumes the full record;
+        // the second hits the partial tail and `read_array::<3>` reports
+        // `Err(Incomplete)`. `remaining_len()` must still report `Some(0)`
+        // once the iterator has fused on the error.
+        let partial = [0u8; 5];
+        let mut it = Fixed3::iter(&partial);
+        assert!(matches!(it.next(), Some(Ok(Fixed3(_)))));
+        assert!(matches!(it.next(), Some(Err(TestErr::Incomplete(_)))));
+        assert_eq!(it.remaining_len(), Some(0));
+    }
+
+    // A zero-WIRE_SIZE element: the contract requires WIRE_SIZE to be
+    // non-zero if `Some`, but `remaining_len` defends against a violation
+    // anyway (a zero stride would otherwise divide-by-zero / loop forever).
+    #[derive(Debug, PartialEq)]
+    struct ZeroWidth;
+    impl<'a> DecodeIter<'a> for ZeroWidth {
+        type Error = TestErr;
+        const WIRE_SIZE: Option<usize> = Some(0);
+        fn decode_next(_buf: &'a [u8]) -> Result<Option<(Self, &'a [u8])>, TestErr> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn remaining_len_is_none_for_zero_wire_size_guard() {
+        let it = ZeroWidth::iter(&[]);
+        assert_eq!(it.remaining_len(), None);
     }
 }
