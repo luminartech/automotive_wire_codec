@@ -29,8 +29,9 @@ repos:
     - id: trailing-whitespace
       exclude_types:
         - markdown
-      exclude: .github/workflows/main.yml
+      exclude: (^\.github/workflows/main\.yml$|^fuzz/corpus/)
     - id: end-of-file-fixer
+      exclude: ^fuzz/corpus/
     - id: check-yaml
       args: [--allow-multiple-documents]
     - id: check-json
@@ -39,6 +40,7 @@ repos:
     - id: check-merge-conflict
     - id: mixed-line-ending
       args: [--fix=lf]
+      exclude: ^fuzz/corpus/
   - repo: https://github.com/executablebooks/mdformat
     rev: 0.7.22
     hooks:
@@ -54,6 +56,8 @@ repos:
     hooks:
       - id: forbid-binary
         always_run: true
+        # Fuzz seed inputs are raw bytes by design.
+        exclude: ^fuzz/corpus/
   - repo: https://github.com/crate-ci/typos
     rev: v1.39.1
     hooks:
