@@ -79,7 +79,9 @@ pub trait Encode {
 
     /// Exact number of bytes [`encode`](Encode::encode) will write.
     ///
-    /// The default runs `encode` against an infallible [`CountingSink`] and
+    /// The default runs `encode` against an infallible [`CountingSink`]
+    /// (one extra `encode` invocation per size query — see the purity
+    /// requirement on [`encode`](Encode::encode)) and
     /// returns the bytes actually written — correct by construction, so
     /// hand-maintained sizes cannot drift from `encode` (the bug class every
     /// migrated consumer had). Override only where a closed-form size is
@@ -115,6 +117,17 @@ pub trait Encode {
 
     /// Serialize into `writer`; return the number of bytes written.
     ///
+    /// **`encode` must be a pure function of `&self`** — same bytes every
+    /// call, no observable side effects. The trait's provided methods may
+    /// invoke it more than once per logical serialization: the default
+    /// [`encoded_size`](Encode::encoded_size) counts by encoding into a
+    /// [`CountingSink`], and [`encode_to_slice`](Encode::encode_to_slice)
+    /// re-runs sizing after a failed encode to classify the error. An
+    /// implementation that mutates through interior mutability (e.g. a
+    /// rolling sequence or alive counter advanced inside `encode`) will have
+    /// that side effect applied per *invocation*, not per frame — advance
+    /// such state outside `encode`, then encode the snapshot.
+    ///
     /// # Errors
     /// `Self::Error` if the sink rejects a write or the value cannot be encoded.
     fn encode(&self, writer: &mut impl Write) -> Result<usize, Self::Error>;
@@ -127,9 +140,11 @@ pub trait Encode {
     ///
     /// The success path is a single `encode` pass —
     /// [`encoded_size`](Encode::encoded_size) is consulted only after a
-    /// failed encode, to classify the error. On error, `buf` may hold
-    /// partially written bytes; on success, bytes past the returned count are
-    /// untouched.
+    /// failed encode, to classify the error (under the default
+    /// `encoded_size` that means a second `encode` invocation; see the
+    /// purity requirement on [`encode`](Encode::encode)). On error, `buf`
+    /// may hold partially written bytes; on success, bytes past the returned
+    /// count are untouched.
     ///
     /// # Errors
     /// [`EncodeToSliceError::InsufficientBuffer`] if `buf` is smaller than

@@ -76,6 +76,14 @@ only safe when the wire format has no redundant-encoding freedom.
   a legacy trait provided them for free, restate the bound at spawn-adjacent
   call sites: `where T: Encode + Send + 'static`. Concrete owned-field message
   types remain auto-`Send + Sync`.
+- **`encode` may run more than once per frame.** The default
+  `encoded_size()` counts by encoding into a sink, and `encode_to_slice`
+  re-runs sizing after a failure to classify it. A legacy encoder that
+  advances state through interior mutability inside `encode` (rolling
+  sequence/alive counters — common in E2E-protected frames) applies that
+  side effect per invocation and can report a `needed` that no longer
+  matches the failed attempt. `encode` must be pure; advance counters
+  outside it and encode the snapshot.
 - **Hostile widths.** `read_be_uint`/`write_be_uint` return
   `InvalidWidth` for `n > 16` in every profile — delete any upstream
   `n > 16` guards you carried, or keep them for domain-specific narrower
