@@ -1,0 +1,11 @@
+# zizmor configuration.
+#
+# Third-party actions stay hash-pinned (renovate keeps the SHAs current), but
+# this org's own reusable workflows are tracked by major tag (@v1) so repos
+# pick up compatible improvements without a bump PR.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        luminartech/*: ref-pin
+        '*': hash-pin
