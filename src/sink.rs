@@ -29,6 +29,23 @@ pub trait Sink {
     fn remaining(&self) -> usize;
 }
 
+/// A mutable reference to a sink is itself a sink.
+///
+/// Mirrors `embedded_io::Write for &mut W` and `std::io::Write for &mut W`.
+/// Without this, a function holding `sink: &mut impl Sink` could not wrap its
+/// own sink (`Limited::new(&mut *sink, n)` would not compile), and
+/// `&mut dyn Sink` could never be passed where `impl Sink` is wanted, since
+/// `impl Sink` implies `Sized`.
+impl<S: Sink + ?Sized> Sink for &mut S {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
+        (**self).write_all(buf)
+    }
+
+    fn remaining(&self) -> usize {
+        (**self).remaining()
+    }
+}
+
 /// Encode into a caller-owned buffer, reporting exact capacity.
 ///
 /// The common sink, and what backs
@@ -76,7 +93,7 @@ impl Sink for SliceSink<'_> {
     }
 
     fn remaining(&self) -> usize {
-        self.buf.len() - self.written
+        self.buf.len().saturating_sub(self.written)
     }
 }
 
@@ -85,7 +102,7 @@ impl Sink for SliceSink<'_> {
 /// Backs the default [`Encode::encoded_size`](crate::Encode::encoded_size);
 /// also useful in consumer tests to assert an `encoded_size` override agrees
 /// with `encode`. Never fails.
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CountingSink {
     count: usize,
 }
@@ -120,7 +137,7 @@ impl Sink for CountingSink {
 /// What a transport driver wraps around its response buffer to enforce an
 /// advertised maximum: an over-long encode then fails at the write with counts
 /// attached, instead of needing a pre-sizing pass.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Limited<S> {
     inner: S,
     budget: usize,
@@ -310,5 +327,83 @@ mod tests {
         assert_eq!(s.remaining(), 0);
         assert!(s.write_all(&[1]).is_err());
         assert!(s.write_all(&[]).is_ok());
+    }
+
+    /// Mirrors `Encode::encode(&self, sink: &mut impl Sink)`: `impl Sink`
+    /// implies `Sized`, so this only accepts a *sized* sink — including
+    /// `&mut dyn Sink`, which is a thin, sized pointer type in its own right.
+    fn write_via_generic_sink(sink: &mut impl Sink, buf: &[u8]) -> Result<(), WriteError> {
+        sink.write_all(buf)
+    }
+
+    #[test]
+    fn mut_ref_to_slice_sink_is_itself_a_sink() {
+        let mut buf = [0u8; 4];
+        let mut inner = SliceSink::new(&mut buf);
+        let mut r = &mut inner;
+        write_via_generic_sink(&mut r, &[1, 2]).unwrap();
+        assert_eq!(r.remaining(), 2);
+        assert_eq!(inner.remaining(), 2);
+        assert_eq!(inner.written(), 2);
+    }
+
+    #[test]
+    fn limited_can_wrap_a_borrowed_sink() {
+        // The motivating case: a function holding `sink: &mut impl Sink`
+        // wraps its own borrow in `Limited` without taking ownership.
+        fn encode_bounded(sink: &mut impl Sink, budget: usize) -> Result<(), WriteError> {
+            let mut limited = Limited::new(&mut *sink, budget);
+            limited.write_all(&[1, 2, 3, 4, 5])
+        }
+
+        let mut buf = [0u8; 64];
+        let mut sink = SliceSink::new(&mut buf);
+        assert_eq!(
+            encode_bounded(&mut sink, 3),
+            Err(WriteError::Insufficient(InsufficientBuffer {
+                needed: 5,
+                available: 3
+            }))
+        );
+        // The budget rejected it before it ever reached the inner sink.
+        assert_eq!(sink.written(), 0);
+
+        assert!(encode_bounded(&mut sink, 10).is_ok());
+        assert_eq!(sink.written(), 5);
+    }
+
+    #[test]
+    fn mut_dyn_sink_accepted_where_sink_is_wanted() {
+        // A caller holding `&mut dyn Sink` (e.g. behind dynamic dispatch)
+        // reborrows it into a function wanting `&mut impl Sink`. `impl Sink`
+        // implies `Sized`; `&mut dyn Sink` itself is a sized, thin pointer,
+        // so this only compiles because `&mut dyn Sink: Sink` via the
+        // blanket `impl<S: Sink + ?Sized> Sink for &mut S`.
+        let mut buf = [0u8; 4];
+        let mut inner = SliceSink::new(&mut buf);
+        let mut dyn_sink: &mut dyn Sink = &mut inner;
+        write_via_generic_sink(&mut dyn_sink, &[9, 8]).unwrap();
+        assert_eq!(inner.written(), 2);
+    }
+
+    #[test]
+    fn limited_inner_refusal_after_budget_pass_leaves_written_unadvanced() {
+        // The budget allows the write, but the inner sink cannot take it.
+        // `needed`/`available` must be the inner sink's, not the budget's,
+        // and `Limited::written` must not advance on the inner failure.
+        let mut buf = [0u8; 3];
+        let mut s = Limited::new(SliceSink::new(&mut buf), 100);
+        assert_eq!(
+            s.write_all(&[1, 2, 3, 4, 5]),
+            Err(WriteError::Insufficient(InsufficientBuffer {
+                needed: 5,
+                available: 3
+            }))
+        );
+        // Budget still reports as if nothing was written.
+        assert_eq!(s.remaining(), 3);
+        // A subsequent write within the inner sink's real capacity succeeds,
+        // proving `written` was not advanced by the failed one.
+        assert!(s.write_all(&[1, 2, 3]).is_ok());
     }
 }

@@ -89,6 +89,7 @@ pub trait Encode {
 mod tests {
     use super::*;
     use crate::error::InsufficientBuffer;
+    use crate::sink::Limited;
     use crate::write::{WriteError, write_u16_be};
 
     #[derive(Debug, Eq, PartialEq)]
@@ -221,5 +222,24 @@ mod tests {
         assert_eq!(sink.count(), 2);
         Val(0x0102).encode(&mut sink).unwrap();
         assert_eq!(sink.count(), 4);
+    }
+
+    #[test]
+    fn encode_through_limited_fails_over_long_with_budget_as_available() {
+        // Spec acceptance: a `Limited` wrapping a larger buffer fails an
+        // over-long *encode*, not just a raw `write_all`. A transport driver
+        // turns this into `responseTooLong`.
+        let mut buf = [0u8; 64];
+        let budget = 1;
+        let mut sink = Limited::new(SliceSink::new(&mut buf), budget);
+        assert_eq!(
+            Val(0xABCD).encode(&mut sink),
+            Err(TestErr::Write(WriteError::Insufficient(
+                InsufficientBuffer {
+                    needed: 2,
+                    available: budget
+                }
+            )))
+        );
     }
 }

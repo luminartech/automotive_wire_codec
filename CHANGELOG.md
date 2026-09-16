@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Write helpers take `&mut impl Sink` and return `WriteError`.
 - `embedded-io` removed entirely — no dependency, no feature, no blanket impl.
   A consumer holding an `embedded_io::Write` peripheral writes a ten-line `Sink` impl.
+- `&mut [u8]` is no longer a sink. `let mut w: &mut [u8] = &mut buf; v.encode(&mut w)`
+  (via embedded-io's slice impl) no longer compiles. Use
+  `v.encode(&mut SliceSink::new(&mut buf))`, or `v.encode_to_slice(&mut buf)`. See
+  `MIGRATION.md` step 7.
+- `InsufficientBuffer::needed`'s **value** changed, not just its documentation. In
+  0.3 it was `encoded_size()` — an exact total. In 0.4 it is `written + buf.len()`
+  at the failing write — a lower bound, always ≤ the 0.3 value, with no compile
+  error to flag the change. Code sizing a retry buffer from `needed` is now
+  silently wrong; call [`encoded_size()`](crate::Encode::encoded_size) for an
+  exact total instead.
 
 ### Added
 
@@ -27,12 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Limited`, bounding any sink to a byte budget — how a transport enforces its
   advertised maximum so an over-long encode fails with counts attached.
 - `WriteError`, one error type for the whole write path.
+- `impl<S: Sink + ?Sized> Sink for &mut S` — lets a function holding
+  `sink: &mut impl Sink` wrap its own borrow (`Limited::new(&mut *sink, n)`) and
+  lets `&mut dyn Sink` satisfy an `impl Sink` bound.
 
 ### Changed
 
 - `CountingSink` implements `Sink`; same behaviour, same public path.
-- `InsufficientBuffer::needed` is documented as a lower bound when it arrives from a
-  failed write. `encoded_size()` remains the exact answer.
 - `encode_to_slice` is single-pass on the failure path as well as on success.
 
 ### Unchanged
