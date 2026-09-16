@@ -115,21 +115,6 @@ impl Sink for CountingSink {
     }
 }
 
-impl embedded_io::ErrorType for CountingSink {
-    type Error = core::convert::Infallible;
-}
-
-impl embedded_io::Write for CountingSink {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        self.count += buf.len();
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
 /// Bound any sink to a byte budget.
 ///
 /// What a transport driver wraps around its response buffer to enforce an
