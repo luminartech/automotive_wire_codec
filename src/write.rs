@@ -11,6 +11,52 @@
 use crate::error::InvalidWidth;
 use embedded_io::{Error, Write};
 
+use crate::error::InsufficientBuffer;
+
+/// Anything that can go wrong on the write path.
+///
+/// One error type for every write helper and for [`Sink`](crate::Sink), so a
+/// consumer's crate-wide error implements a single `From` to lift all of them
+/// through `?`.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WriteError {
+    /// The sink could not accept the write, and knew by how much.
+    ///
+    /// `needed` is a lower bound — see [`InsufficientBuffer`].
+    Insufficient(InsufficientBuffer),
+    /// The sink failed for its own reasons.
+    ///
+    /// Carries no detail: nothing in the stack distinguishes sink I/O
+    /// failures, and a sink needing detail keeps it in its own error type.
+    Io,
+    /// A variable-width write was asked for an out-of-range byte width.
+    InvalidWidth(InvalidWidth),
+}
+
+impl From<InsufficientBuffer> for WriteError {
+    fn from(e: InsufficientBuffer) -> Self {
+        WriteError::Insufficient(e)
+    }
+}
+
+impl From<InvalidWidth> for WriteError {
+    fn from(e: InvalidWidth) -> Self {
+        WriteError::InvalidWidth(e)
+    }
+}
+
+impl core::fmt::Display for WriteError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            WriteError::Insufficient(e) => e.fmt(f),
+            WriteError::InvalidWidth(e) => e.fmt(f),
+            WriteError::Io => f.write_str("sink write failed"),
+        }
+    }
+}
+impl core::error::Error for WriteError {}
+
 /// Write a single byte. Returns `1`.
 ///
 /// # Errors
@@ -138,7 +184,7 @@ pub fn write_all(w: &mut impl Write, bytes: &[u8]) -> Result<usize, embedded_io:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::InvalidWidth;
+    use crate::error::{InsufficientBuffer, InvalidWidth};
 
     #[test]
     fn write_u16_be_writes_big_endian_and_counts() {
@@ -243,5 +289,42 @@ mod tests {
         let mut w: &mut [u8] = &mut buf;
         assert_eq!(write_be_uint(&mut w, v, minimal_be_len(v)).unwrap(), n);
         assert_eq!(&buf[..n], &[0xAB, 0xCD, 0xEF]);
+    }
+
+    #[test]
+    fn write_error_carries_counts_and_displays() {
+        let e = WriteError::from(InsufficientBuffer {
+            needed: 8,
+            available: 4,
+        });
+        assert_eq!(
+            e,
+            WriteError::Insufficient(InsufficientBuffer {
+                needed: 8,
+                available: 4
+            })
+        );
+        assert_eq!(
+            std::string::ToString::to_string(&e),
+            "insufficient buffer: needed 8 bytes, 4 available"
+        );
+    }
+
+    #[test]
+    fn write_error_carries_invalid_width() {
+        let e = WriteError::from(InvalidWidth { max: 16, got: 255 });
+        assert_eq!(e, WriteError::InvalidWidth(InvalidWidth { max: 16, got: 255 }));
+        assert_eq!(
+            std::string::ToString::to_string(&e),
+            "invalid width: got 255, max 16"
+        );
+    }
+
+    #[test]
+    fn write_error_io_displays() {
+        assert_eq!(
+            std::string::ToString::to_string(&WriteError::Io),
+            "sink write failed"
+        );
     }
 }
