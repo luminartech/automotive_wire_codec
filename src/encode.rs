@@ -3,6 +3,7 @@
 use embedded_io::Write;
 
 use crate::error::InsufficientBuffer;
+use crate::sink::CountingSink;
 
 /// Error from [`Encode::encode_to_slice`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,43 +28,6 @@ impl<E: core::fmt::Display> core::fmt::Display for EncodeToSliceError<E> {
     }
 }
 impl<E: core::fmt::Debug + core::fmt::Display> core::error::Error for EncodeToSliceError<E> {}
-
-/// Infallible [`embedded_io::Write`] sink that counts bytes and stores nothing.
-///
-/// Backs the default [`Encode::encoded_size`]; also useful in consumer tests to
-/// assert an `encoded_size` override agrees with `encode`.
-#[derive(Debug, Default)]
-pub struct CountingSink {
-    count: usize,
-}
-
-impl CountingSink {
-    /// New sink with a zero count.
-    #[must_use]
-    pub const fn new() -> Self {
-        Self { count: 0 }
-    }
-
-    /// Total bytes written so far.
-    #[must_use]
-    pub const fn count(&self) -> usize {
-        self.count
-    }
-}
-
-impl embedded_io::ErrorType for CountingSink {
-    type Error = core::convert::Infallible;
-}
-
-impl Write for CountingSink {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        self.count += buf.len();
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
 
 /// TX-side: serialize `self` into an [`embedded_io::Write`] sink.
 pub trait Encode {

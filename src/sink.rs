@@ -80,10 +80,105 @@ impl Sink for SliceSink<'_> {
     }
 }
 
+/// Sink that counts bytes and stores nothing.
+///
+/// Backs the default [`Encode::encoded_size`](crate::Encode::encoded_size);
+/// also useful in consumer tests to assert an `encoded_size` override agrees
+/// with `encode`. Never fails.
+#[derive(Debug, Default)]
+pub struct CountingSink {
+    count: usize,
+}
+
+impl CountingSink {
+    /// New sink with a zero count.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { count: 0 }
+    }
+
+    /// Total bytes written so far.
+    #[must_use]
+    pub const fn count(&self) -> usize {
+        self.count
+    }
+}
+
+impl Sink for CountingSink {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
+        self.count += buf.len();
+        Ok(())
+    }
+
+    fn remaining(&self) -> usize {
+        usize::MAX
+    }
+}
+
+impl embedded_io::ErrorType for CountingSink {
+    type Error = core::convert::Infallible;
+}
+
+impl embedded_io::Write for CountingSink {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        self.count += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+/// Bound any sink to a byte budget.
+///
+/// What a transport driver wraps around its response buffer to enforce an
+/// advertised maximum: an over-long encode then fails at the write with counts
+/// attached, instead of needing a pre-sizing pass.
+#[derive(Debug)]
+pub struct Limited<S> {
+    inner: S,
+    budget: usize,
+    written: usize,
+}
+
+impl<S: Sink> Limited<S> {
+    /// Bound `inner` to `budget` bytes.
+    #[must_use]
+    pub const fn new(inner: S, budget: usize) -> Self {
+        Self {
+            inner,
+            budget,
+            written: 0,
+        }
+    }
+}
+
+impl<S: Sink> Sink for Limited<S> {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
+        let end = self.written + buf.len();
+        if end > self.budget {
+            return Err(InsufficientBuffer {
+                needed: end,
+                available: self.budget,
+            }
+            .into());
+        }
+        self.inner.write_all(buf)?;
+        self.written = end;
+        Ok(())
+    }
+
+    fn remaining(&self) -> usize {
+        self.budget
+            .saturating_sub(self.written)
+            .min(self.inner.remaining())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::InsufficientBuffer;
 
     /// A sink that accepts everything and reports no bound.
     struct NullSink;
@@ -169,5 +264,66 @@ mod tests {
         let mut s = SliceSink::new(&mut buf);
         assert!(s.write_all(&[]).is_ok());
         assert_eq!(s.remaining(), 0);
+    }
+
+    #[test]
+    fn counting_sink_counts_and_reports_no_bound() {
+        let mut s = CountingSink::new();
+        assert_eq!(s.remaining(), usize::MAX);
+        s.write_all(&[1, 2, 3]).unwrap();
+        s.write_all(&[4]).unwrap();
+        assert_eq!(s.count(), 4);
+        assert_eq!(s.remaining(), usize::MAX);
+    }
+
+    #[test]
+    fn limited_enforces_budget_below_inner_capacity() {
+        // The 0x14 story: a driver bounds a large buffer to the transport's
+        // advertised maximum, and the overflow is counted against the budget.
+        let mut buf = [0u8; 64];
+        let mut s = Limited::new(SliceSink::new(&mut buf), 4);
+        assert_eq!(s.remaining(), 4);
+        s.write_all(&[1, 2, 3]).unwrap();
+        assert_eq!(s.remaining(), 1);
+        assert_eq!(
+            s.write_all(&[4, 5]),
+            Err(WriteError::Insufficient(InsufficientBuffer {
+                needed: 5,
+                available: 4
+            }))
+        );
+    }
+
+    #[test]
+    fn limited_rejects_without_writing_through() {
+        // A write refused by the budget must not reach the inner sink.
+        let mut buf = [0xEEu8; 64];
+        {
+            let mut s = Limited::new(SliceSink::new(&mut buf), 2);
+            assert!(s.write_all(&[1, 2, 3]).is_err());
+        }
+        assert_eq!(buf[0], 0xEE);
+    }
+
+    #[test]
+    fn limited_remaining_is_min_of_budget_and_inner() {
+        // Budget larger than the inner sink: the inner bound wins.
+        let mut buf = [0u8; 3];
+        let s = Limited::new(SliceSink::new(&mut buf), 100);
+        assert_eq!(s.remaining(), 3);
+    }
+
+    #[test]
+    fn limited_over_unbounded_inner_reports_budget() {
+        let s = Limited::new(CountingSink::new(), 7);
+        assert_eq!(s.remaining(), 7);
+    }
+
+    #[test]
+    fn limited_zero_budget_rejects_any_nonempty_write() {
+        let mut s = Limited::new(CountingSink::new(), 0);
+        assert_eq!(s.remaining(), 0);
+        assert!(s.write_all(&[1]).is_err());
+        assert!(s.write_all(&[]).is_ok());
     }
 }
