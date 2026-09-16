@@ -34,9 +34,9 @@ impl core::error::Error for TrailingBytes {}
 
 /// A variable-width read/write was requested with an out-of-range byte width.
 ///
-/// Returned (via [`ReadUintError`](crate::ReadUintError) /
-/// [`WriteUintError`](crate::WriteUintError)) instead of panicking, so a
-/// wire-controlled width is a recoverable *data* error, not a programming error.
+/// Returned (via [`ReadUintError`](crate::ReadUintError)) instead of
+/// panicking, so a wire-controlled width is a recoverable *data* error, not a
+/// programming error.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidWidth {
     /// Maximum width the operation supports.
@@ -47,15 +47,20 @@ pub struct InvalidWidth {
 
 /// An output slice was too small for the bytes an encode needed to write.
 ///
-/// Encode-side mirror of [`Incomplete`]. Constructed by
-/// [`Encode::encode_to_slice`](crate::Encode::encode_to_slice), where both
-/// counts are knowable; generic [`embedded_io::Write`] sinks cannot report
-/// capacity, so they surface [`embedded_io::ErrorKind::WriteZero`] instead.
+/// Encode-side mirror of [`Incomplete`]. Carried by
+/// [`WriteError::Insufficient`](crate::WriteError::Insufficient) from any sink
+/// that knows its capacity — [`SliceSink`](crate::SliceSink), or anything
+/// wrapped in [`Limited`](crate::Limited).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InsufficientBuffer {
-    /// Number of bytes the encode required.
+    /// Bytes required to complete the write that failed, including those
+    /// already written.
+    ///
+    /// A **lower bound** on the encode's total size: the encode stopped at
+    /// this write, so whatever remained was never measured. For an exact
+    /// total, call [`Encode::encoded_size`](crate::Encode::encoded_size).
     pub needed: usize,
-    /// Number of bytes the slice actually had.
+    /// Total capacity the sink had.
     pub available: usize,
 }
 

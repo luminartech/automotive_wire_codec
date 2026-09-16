@@ -3,7 +3,7 @@
 use automotive_wire_codec::{
     read_array, read_be_uint, read_be_uint_into, read_optional_array, read_u8, read_u16_be,
     read_u32_be, read_u64_be, read_u128_be, take, write_be_uint, write_u16_be, write_u128_be,
-    DecodeIter, Encode, EncodeToSliceError, Incomplete, InsufficientBuffer, ensure_len,
+    DecodeIter, Encode, Incomplete, InsufficientBuffer, SliceSink, Sink, WriteError, ensure_len,
     minimal_be_len,
 };
 use libfuzzer_sys::fuzz_target;
@@ -27,8 +27,8 @@ impl<'a> DecodeIter<'a> for Rec {
 // fuzzer exercises CountingSink and encode_to_slice's error classification.
 struct V(u16);
 impl Encode for V {
-    type Error = embedded_io::ErrorKind;
-    fn encode(&self, w: &mut impl embedded_io::Write) -> Result<usize, Self::Error> {
+    type Error = WriteError;
+    fn encode(&self, w: &mut impl Sink) -> Result<usize, Self::Error> {
         write_u16_be(w, self.0)
     }
 }
@@ -59,7 +59,7 @@ fuzz_target!(|data: &[u8]| {
             // Read/write round-trip at the same width: writing the value
             // back with width n reproduces the n input bytes exactly.
             let mut buf = [0u8; 16];
-            let mut w: &mut [u8] = &mut buf;
+            let mut w = SliceSink::new(&mut buf);
             assert_eq!(write_be_uint(&mut w, value, n).unwrap(), n);
             assert_eq!(&buf[..n], &data[..n]);
             // Minimal-width round-trip: minimal_be_len never over-reports,
@@ -67,7 +67,7 @@ fuzz_target!(|data: &[u8]| {
             let m = minimal_be_len(value);
             assert!(m <= n);
             let mut buf2 = [0u8; 16];
-            let mut w2: &mut [u8] = &mut buf2;
+            let mut w2 = SliceSink::new(&mut buf2);
             assert_eq!(write_be_uint(&mut w2, value, m).unwrap(), m);
             assert_eq!(read_be_uint(&buf2[..m], m).unwrap().0, value);
         }
@@ -84,7 +84,7 @@ fuzz_target!(|data: &[u8]| {
         data.get(1).copied().unwrap_or(0),
     ]);
     let mut buf = [0u8; 2];
-    let mut w: &mut [u8] = &mut buf;
+    let mut w = SliceSink::new(&mut buf);
     assert_eq!(write_u16_be(&mut w, v).unwrap(), 2);
     let (decoded, rest) = read_u16_be(&buf).unwrap();
     assert_eq!(decoded, v);
@@ -93,16 +93,24 @@ fuzz_target!(|data: &[u8]| {
     // u128 round-trip through the widest fixed helpers.
     let v128 = u128::from(v) << 112 | u128::from(v);
     let mut buf16 = [0u8; 16];
-    let mut w16: &mut [u8] = &mut buf16;
+    let mut w16 = SliceSink::new(&mut buf16);
     assert_eq!(write_u128_be(&mut w16, v128).unwrap(), 16);
     assert_eq!(read_u128_be(&buf16).unwrap().0, v128);
 
     // write_be_uint must never panic for ANY n — hostile widths return Err.
     let mut wide = [0u8; 16];
-    let mut ww: &mut [u8] = &mut wide;
-    let _ = write_be_uint(&mut ww, u128::from(v), 2);
-    let mut ww2: &mut [u8] = &mut wide;
-    let _ = write_be_uint(&mut ww2, u128::from(v), usize::from(data.first().copied().unwrap_or(0)));
+    {
+        let mut ww = SliceSink::new(&mut wide);
+        let _ = write_be_uint(&mut ww, u128::from(v), 2);
+    }
+    {
+        let mut ww2 = SliceSink::new(&mut wide);
+        let _ = write_be_uint(
+            &mut ww2,
+            u128::from(v),
+            usize::from(data.first().copied().unwrap_or(0)),
+        );
+    }
 
     // encode_to_slice classification, via the default (counting) encoded_size:
     // an exact buffer succeeds single-pass; a short one reports both counts.
@@ -112,7 +120,7 @@ fuzz_target!(|data: &[u8]| {
     let mut short = [0u8; 1];
     assert!(matches!(
         V(v).encode_to_slice(&mut short),
-        Err(EncodeToSliceError::InsufficientBuffer(InsufficientBuffer {
+        Err(WriteError::Insufficient(InsufficientBuffer {
             needed: 2,
             available: 1,
         }))
