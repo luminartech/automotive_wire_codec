@@ -3,7 +3,7 @@
 //!
 //! A sink that knows its capacity — [`SliceSink`](crate::SliceSink) or
 //! anything wrapped in [`Limited`](crate::Limited) — reports
-//! [`WriteError::Insufficient`] with `needed`/`available` attached, so an
+//! [`WriteError::Insufficient`] with `needed_at_least`/`available` attached, so an
 //! overflow arrives already classified. There is no second error type and no
 //! pre-sizing pass.
 
@@ -20,12 +20,14 @@ use crate::sink::Sink;
 pub enum WriteError {
     /// The sink could not accept the write, and knew by how much.
     ///
-    /// `needed` is a lower bound — see [`InsufficientBuffer`].
+    /// `needed_at_least` is a lower bound — see [`InsufficientBuffer`].
     Insufficient(InsufficientBuffer),
     /// The sink failed for its own reasons.
     ///
-    /// Carries no detail: nothing in the stack distinguishes sink I/O
-    /// failures, and a sink needing detail keeps it in its own error type.
+    /// Carries no detail: `Sink::write_all` returns `WriteError` with no
+    /// associated error type, so nothing survives the boundary. A sink that
+    /// needs to act on its own failure — logging it, tearing down a
+    /// connection — must do so before returning this variant, not after.
     Io,
     /// A variable-width write was asked for an out-of-range byte width.
     InvalidWidth(InvalidWidth),
@@ -199,7 +201,7 @@ mod tests {
         assert_eq!(
             write_u16_be(&mut w, 0x1234),
             Err(WriteError::Insufficient(InsufficientBuffer {
-                needed: 2,
+                needed_at_least: 2,
                 available: 1
             }))
         );
@@ -211,10 +213,7 @@ mod tests {
         let mut w = CountingSink::new();
         assert_eq!(
             write_be_uint(&mut w, 0xABCD, 255),
-            Err(WriteError::InvalidWidth(InvalidWidth {
-                max: 16,
-                got: 255
-            }))
+            Err(WriteError::InvalidWidth(InvalidWidth { max: 16, got: 255 }))
         );
     }
 
@@ -261,26 +260,29 @@ mod tests {
     #[test]
     fn write_error_carries_counts_and_displays() {
         let e = WriteError::from(InsufficientBuffer {
-            needed: 8,
+            needed_at_least: 8,
             available: 4,
         });
         assert_eq!(
             e,
             WriteError::Insufficient(InsufficientBuffer {
-                needed: 8,
+                needed_at_least: 8,
                 available: 4
             })
         );
         assert_eq!(
             std::string::ToString::to_string(&e),
-            "insufficient buffer: needed 8 bytes, 4 available"
+            "insufficient buffer: needed at least 8 bytes, 4 available"
         );
     }
 
     #[test]
     fn write_error_carries_invalid_width() {
         let e = WriteError::from(InvalidWidth { max: 16, got: 255 });
-        assert_eq!(e, WriteError::InvalidWidth(InvalidWidth { max: 16, got: 255 }));
+        assert_eq!(
+            e,
+            WriteError::InvalidWidth(InvalidWidth { max: 16, got: 255 })
+        );
         assert_eq!(
             std::string::ToString::to_string(&e),
             "invalid width: got 255, max 16"

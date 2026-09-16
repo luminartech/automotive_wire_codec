@@ -3,7 +3,7 @@
 use crate::error::InsufficientBuffer;
 use crate::write::WriteError;
 
-/// A byte sink that knows how much room it has left.
+/// A byte sink that accepts a write, or fails.
 ///
 /// Implemented by [`SliceSink`](crate::SliceSink),
 /// [`CountingSink`](crate::CountingSink) and [`Limited`](crate::Limited). A
@@ -19,14 +19,6 @@ pub trait Sink {
     /// [`WriteError::Insufficient`] if the sink is out of room and knows by how
     /// much; [`WriteError::Io`] if it failed for its own reasons.
     fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError>;
-
-    /// Bytes guaranteed writable from here.
-    ///
-    /// [`usize::MAX`] means no bound is known. A sink that knows its capacity
-    /// must report it honestly and must never over-report — a counted overflow
-    /// is only possible because this number can be trusted. Implementations
-    /// computing it by subtraction must saturate.
-    fn remaining(&self) -> usize;
 }
 
 /// A mutable reference to a sink is itself a sink.
@@ -39,10 +31,6 @@ pub trait Sink {
 impl<S: Sink + ?Sized> Sink for &mut S {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
         (**self).write_all(buf)
-    }
-
-    fn remaining(&self) -> usize {
-        (**self).remaining()
     }
 }
 
@@ -69,6 +57,12 @@ impl<'a> SliceSink<'a> {
         self.written
     }
 
+    /// Bytes still writable in the wrapped buffer.
+    #[must_use]
+    pub const fn remaining(&self) -> usize {
+        self.buf.len().saturating_sub(self.written)
+    }
+
     /// Consume the sink and borrow the bytes actually written.
     #[must_use]
     pub fn into_written(self) -> &'a [u8] {
@@ -82,7 +76,7 @@ impl Sink for SliceSink<'_> {
         let end = self.written + buf.len();
         if end > self.buf.len() {
             return Err(InsufficientBuffer {
-                needed: end,
+                needed_at_least: end,
                 available: self.buf.len(),
             }
             .into());
@@ -91,10 +85,6 @@ impl Sink for SliceSink<'_> {
         self.written = end;
         Ok(())
     }
-
-    fn remaining(&self) -> usize {
-        self.buf.len().saturating_sub(self.written)
-    }
 }
 
 /// Sink that counts bytes and stores nothing.
@@ -102,7 +92,7 @@ impl Sink for SliceSink<'_> {
 /// Backs the default [`Encode::encoded_size`](crate::Encode::encoded_size);
 /// also useful in consumer tests to assert an `encoded_size` override agrees
 /// with `encode`. Never fails.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CountingSink {
     count: usize,
 }
@@ -125,10 +115,6 @@ impl Sink for CountingSink {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
         self.count += buf.len();
         Ok(())
-    }
-
-    fn remaining(&self) -> usize {
-        usize::MAX
     }
 }
 
@@ -154,6 +140,17 @@ impl<S: Sink> Limited<S> {
             written: 0,
         }
     }
+
+    /// Bytes still allowed by the budget.
+    ///
+    /// This is the budget's own bound and does not consult the wrapped sink, so
+    /// a `Limited` whose budget exceeds the inner sink's capacity reports more
+    /// than the inner sink would accept. An over-long write still fails, with
+    /// the inner sink's own counts.
+    #[must_use]
+    pub const fn remaining(&self) -> usize {
+        self.budget.saturating_sub(self.written)
+    }
 }
 
 impl<S: Sink> Sink for Limited<S> {
@@ -161,7 +158,7 @@ impl<S: Sink> Sink for Limited<S> {
         let end = self.written + buf.len();
         if end > self.budget {
             return Err(InsufficientBuffer {
-                needed: end,
+                needed_at_least: end,
                 available: self.budget,
             }
             .into());
@@ -170,35 +167,11 @@ impl<S: Sink> Sink for Limited<S> {
         self.written = end;
         Ok(())
     }
-
-    fn remaining(&self) -> usize {
-        self.budget
-            .saturating_sub(self.written)
-            .min(self.inner.remaining())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A sink that accepts everything and reports no bound.
-    struct NullSink;
-    impl Sink for NullSink {
-        fn write_all(&mut self, _buf: &[u8]) -> Result<(), WriteError> {
-            Ok(())
-        }
-        fn remaining(&self) -> usize {
-            usize::MAX
-        }
-    }
-
-    #[test]
-    fn unbounded_sink_reports_sentinel() {
-        let mut s = NullSink;
-        assert!(s.write_all(&[1, 2, 3]).is_ok());
-        assert_eq!(s.remaining(), usize::MAX);
-    }
 
     #[test]
     fn slice_sink_writes_and_tracks_remaining() {
@@ -219,7 +192,7 @@ mod tests {
         assert_eq!(
             s.write_all(&[0xAB, 0xCD]),
             Err(WriteError::Insufficient(InsufficientBuffer {
-                needed: 2,
+                needed_at_least: 2,
                 available: 1
             }))
         );
@@ -235,7 +208,7 @@ mod tests {
         assert_eq!(
             s.write_all(&[3, 4]),
             Err(WriteError::Insufficient(InsufficientBuffer {
-                needed: 4,
+                needed_at_least: 4,
                 available: 3
             }))
         );
@@ -269,13 +242,11 @@ mod tests {
     }
 
     #[test]
-    fn counting_sink_counts_and_reports_no_bound() {
+    fn counting_sink_counts() {
         let mut s = CountingSink::new();
-        assert_eq!(s.remaining(), usize::MAX);
         s.write_all(&[1, 2, 3]).unwrap();
         s.write_all(&[4]).unwrap();
         assert_eq!(s.count(), 4);
-        assert_eq!(s.remaining(), usize::MAX);
     }
 
     #[test]
@@ -290,7 +261,7 @@ mod tests {
         assert_eq!(
             s.write_all(&[4, 5]),
             Err(WriteError::Insufficient(InsufficientBuffer {
-                needed: 5,
+                needed_at_least: 5,
                 available: 4
             }))
         );
@@ -308,15 +279,21 @@ mod tests {
     }
 
     #[test]
-    fn limited_remaining_is_min_of_budget_and_inner() {
-        // Budget larger than the inner sink: the inner bound wins.
+    fn limited_remaining_reports_budget_even_over_a_smaller_inner_capacity() {
+        // `Limited::remaining` no longer consults the inner sink (it cannot:
+        // `remaining` is not on `Sink` any more). A budget larger than the
+        // inner sink's real capacity is reported as-is; an over-long write
+        // still fails, with the inner sink's own counts (see
+        // `limited_inner_refusal_after_budget_pass_leaves_written_unadvanced`).
         let mut buf = [0u8; 3];
         let s = Limited::new(SliceSink::new(&mut buf), 100);
-        assert_eq!(s.remaining(), 3);
+        assert_eq!(s.remaining(), 100);
     }
 
     #[test]
-    fn limited_over_unbounded_inner_reports_budget() {
+    fn limited_over_counting_sink_reports_budget() {
+        // CountingSink has no `remaining` of its own; `Limited::remaining`
+        // never needs to ask it.
         let s = Limited::new(CountingSink::new(), 7);
         assert_eq!(s.remaining(), 7);
     }
@@ -361,7 +338,7 @@ mod tests {
         assert_eq!(
             encode_bounded(&mut sink, 3),
             Err(WriteError::Insufficient(InsufficientBuffer {
-                needed: 5,
+                needed_at_least: 5,
                 available: 3
             }))
         );
@@ -389,19 +366,21 @@ mod tests {
     #[test]
     fn limited_inner_refusal_after_budget_pass_leaves_written_unadvanced() {
         // The budget allows the write, but the inner sink cannot take it.
-        // `needed`/`available` must be the inner sink's, not the budget's,
-        // and `Limited::written` must not advance on the inner failure.
+        // `needed_at_least`/`available` must be the inner sink's, not the
+        // budget's, and `Limited::written` must not advance on the inner
+        // failure.
         let mut buf = [0u8; 3];
         let mut s = Limited::new(SliceSink::new(&mut buf), 100);
         assert_eq!(
             s.write_all(&[1, 2, 3, 4, 5]),
             Err(WriteError::Insufficient(InsufficientBuffer {
-                needed: 5,
+                needed_at_least: 5,
                 available: 3
             }))
         );
-        // Budget still reports as if nothing was written.
-        assert_eq!(s.remaining(), 3);
+        // Budget still reports as if nothing was written (it does not
+        // consult the inner sink, so this is the raw budget, not 3).
+        assert_eq!(s.remaining(), 100);
         // A subsequent write within the inner sink's real capacity succeeds,
         // proving `written` was not advanced by the failed one.
         assert!(s.write_all(&[1, 2, 3]).is_ok());

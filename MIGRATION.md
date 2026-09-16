@@ -97,7 +97,7 @@ only safe when the wire format has no redundant-encoding freedom.
 ## Fixed-buffer encoding
 
 Use `value.encode_to_slice(&mut buf)?` — a too-small buffer reports
-`WriteError::Insufficient(InsufficientBuffer { needed, available })`, lifted into
+`WriteError::Insufficient(InsufficientBuffer { needed_at_least, available })`, lifted into
 `Self::Error` through your `From<WriteError>` impl. `encode` runs exactly once
 whether it succeeds or fails; there is no separate sizing pass on the failure
 path. Encoding directly through a `SliceSink` (rather than via `encode_to_slice`)
@@ -129,4 +129,4 @@ match response.encode(&mut sink) {
 };
 ```
 
-`needed` on that error is a lower bound, not the response's true size.
+`needed_at_least` on that error is a lower bound, not the response's true size.

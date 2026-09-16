@@ -65,14 +65,15 @@ pub trait Encode {
     /// Encode into a fixed slice; return the number of bytes written.
     ///
     /// A [`SliceSink`] knows its capacity, so a slice too small fails with
-    /// [`WriteError::Insufficient`] carrying `needed`/`available` — lifted
-    /// into `Self::Error` like any other write failure. There is no separate
-    /// error type and no sizing pass: `encode` runs exactly once whether it
-    /// succeeds or fails.
+    /// [`WriteError::Insufficient`] carrying `needed_at_least`/`available` —
+    /// lifted into `Self::Error` like any other write failure. There is no
+    /// separate error type and no sizing pass: `encode` runs exactly once
+    /// whether it succeeds or fails.
     ///
-    /// `needed` is a lower bound, not the encode's total — the encode stopped
-    /// at the failing write, so what remained was never measured. Call
-    /// [`encoded_size`](Encode::encoded_size) for an exact total.
+    /// `needed_at_least` is a lower bound, not the encode's total — the
+    /// encode stopped at the failing write, so what remained was never
+    /// measured. Call [`encoded_size`](Encode::encoded_size) for an exact
+    /// total.
     ///
     /// On error, `buf` may hold partially written bytes; on success, bytes
     /// past the returned count are untouched.
@@ -174,7 +175,7 @@ mod tests {
             Val(0xABCD).encode_to_slice(&mut buf),
             Err(TestErr::Write(WriteError::Insufficient(
                 InsufficientBuffer {
-                    needed: 2,
+                    needed_at_least: 2,
                     available: 1
                 }
             )))
@@ -236,7 +237,7 @@ mod tests {
             Val(0xABCD).encode(&mut sink),
             Err(TestErr::Write(WriteError::Insufficient(
                 InsufficientBuffer {
-                    needed: 2,
+                    needed_at_least: 2,
                     available: budget
                 }
             )))

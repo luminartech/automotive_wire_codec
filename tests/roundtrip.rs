@@ -1,7 +1,7 @@
 //! Encode→decode round-trips for every leaf width, via proptest (spec §10.1).
 
 use automotive_wire_codec::{
-    SliceSink, Sink, read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, read_u128_be,
+    SliceSink, read_be_uint, read_u8, read_u16_be, read_u32_be, read_u64_be, read_u128_be,
     write_be_uint, write_u8, write_u16_be, write_u32_be, write_u64_be, write_u128_be,
 };
 use proptest::prelude::*;
@@ -12,8 +12,8 @@ fn crate_has_no_embedded_io_in_its_surface() {
     // compile-time assertion - if embedded-io returns as a dependency, the
     // grep in the acceptance checklist catches it; this test pins the sink
     // vocabulary as the only way in.
-    // `Sink` must be in scope for `remaining()` - it is a trait method; it
-    // and `SliceSink`/`write_u16_be` come from the module-level `use` above.
+    // `remaining()` here is `SliceSink`'s own inherent method, not a trait
+    // method - `Sink` no longer has one, so it need not be in scope.
     let mut buf = [0u8; 4];
     let mut sink = SliceSink::new(&mut buf);
     assert_eq!(write_u16_be(&mut sink, 0x1234).unwrap(), 2);

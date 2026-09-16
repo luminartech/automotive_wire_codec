@@ -59,7 +59,7 @@ pub struct InsufficientBuffer {
     /// A **lower bound** on the encode's total size: the encode stopped at
     /// this write, so whatever remained was never measured. For an exact
     /// total, call [`Encode::encoded_size`](crate::Encode::encoded_size).
-    pub needed: usize,
+    pub needed_at_least: usize,
     /// Total capacity the sink had.
     pub available: usize,
 }
@@ -75,8 +75,8 @@ impl core::fmt::Display for InsufficientBuffer {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "insufficient buffer: needed {} bytes, {} available",
-            self.needed, self.available
+            "insufficient buffer: needed at least {} bytes, {} available",
+            self.needed_at_least, self.available
         )
     }
 }
@@ -124,12 +124,12 @@ mod tests {
     #[test]
     fn insufficient_buffer_display() {
         let e = InsufficientBuffer {
-            needed: 8,
+            needed_at_least: 8,
             available: 4,
         };
         assert_eq!(
             e.to_string(),
-            "insufficient buffer: needed 8 bytes, 4 available"
+            "insufficient buffer: needed at least 8 bytes, 4 available"
         );
     }
 

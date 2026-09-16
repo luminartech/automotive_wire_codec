@@ -121,7 +121,7 @@ fuzz_target!(|data: &[u8]| {
     assert!(matches!(
         V(v).encode_to_slice(&mut short),
         Err(WriteError::Insufficient(InsufficientBuffer {
-            needed: 2,
+            needed_at_least: 2,
             available: 1,
         }))
     ));
