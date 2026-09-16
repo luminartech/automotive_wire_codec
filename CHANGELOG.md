@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Breaking
+
+- `Encode::encode` takes `&mut impl Sink`, not `&mut impl embedded_io::Write`.
+- `Encode::Error` bound is `From<WriteError>`, not `From<embedded_io::ErrorKind>`.
+- `EncodeToSliceError` deleted. `encode_to_slice` returns `Self::Error`.
+- `WriteUintError` deleted. `WriteError` carries `InvalidWidth`.
+- Free function `write_all` renamed `write_bytes` (collided with `Sink::write_all`).
+- Write helpers take `&mut impl Sink` and return `WriteError`.
+- `embedded-io` removed entirely — no dependency, no feature, no blanket impl.
+  A consumer holding an `embedded_io::Write` peripheral writes a ten-line `Sink` impl.
+
+### Added
+
+- `Sink`, with `remaining()` reporting guaranteed capacity (`usize::MAX` = unbounded).
+- `SliceSink`, exact capacity, backs `encode_to_slice`.
+- `Limited`, bounding any sink to a byte budget — how a transport enforces its
+  advertised maximum so an over-long encode fails with counts attached.
+- `WriteError`, one error type for the whole write path.
+
+### Changed
+
+- `CountingSink` implements `Sink`; same behaviour, same public path.
+- `InsufficientBuffer::needed` is documented as a lower bound when it arrives from a
+  failed write. `encoded_size()` remains the exact answer.
+- `encode_to_slice` is single-pass on the failure path as well as on success.
+
+### Unchanged
+
+- The entire read side, and `no_std` / no-alloc / zero-copy.
+
 ## [0.3.0](https://github.com/luminartech/automotive_wire_codec/compare/v0.2.0...v0.3.0) - 2026-07-15
 
 Addresses the aggregated migration feedback from the uds, doip, and someip

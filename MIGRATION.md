@@ -1,6 +1,6 @@
 # Migrating a protocol crate onto automotive-wire-codec
 
-Field guide distilled from the uds/doip/someip migrations. Applies to 0.3.
+Field guide distilled from the uds/doip/someip migrations. Applies to 0.4.
 
 ## The error pattern: one crate-wide error absorbs the fragments
 
@@ -9,11 +9,15 @@ Give your existing crate-wide error enum one `From` impl per codec fragment:
 ```rust
 impl From<automotive_wire_codec::Incomplete> for Error { /* variant */ }
 impl From<automotive_wire_codec::TrailingBytes> for Error { /* variant */ }
-impl From<embedded_io::ErrorKind> for Error { /* variant */ }
-// If you use the variable-width helpers, also:
+impl From<automotive_wire_codec::WriteError> for Error { /* variant */ }
+// If you use the variable-width READ helper, also:
 impl From<automotive_wire_codec::ReadUintError> for Error { /* match both arms */ }
-impl From<automotive_wire_codec::WriteUintError> for Error { /* match both arms */ }
 ```
+
+`From<embedded_io::ErrorKind>` and `From<automotive_wire_codec::WriteUintError>` are
+**both gone** as of 0.4 — `WriteError` covers the entire write path, including the
+variable-width write helper's `InvalidWidth`, so one `From` impl replaces what used to
+be two.
 
 Then every `impl Decode`/`Encode` block is `type Error = crate::Error;` and all
 leaf-helper calls lift through `?`. **Do not mint a per-type error enum for
@@ -76,14 +80,14 @@ only safe when the wire format has no redundant-encoding freedom.
   a legacy trait provided them for free, restate the bound at spawn-adjacent
   call sites: `where T: Encode + Send + 'static`. Concrete owned-field message
   types remain auto-`Send + Sync`.
-- **`encode` may run more than once per frame.** The default
-  `encoded_size()` counts by encoding into a sink, and `encode_to_slice`
-  re-runs sizing after a failure to classify it. A legacy encoder that
-  advances state through interior mutability inside `encode` (rolling
-  sequence/alive counters — common in E2E-protected frames) applies that
-  side effect per invocation and can report a `needed` that no longer
-  matches the failed attempt. `encode` must be pure; advance counters
-  outside it and encode the snapshot.
+- **`encode` may run more than once per frame.** Calling `encoded_size()`
+  before `encode()` (e.g. for a length prefix) runs `encode` twice — once
+  through the counting sink, once for real. A legacy encoder that advances
+  state through interior mutability inside `encode` (rolling sequence/alive
+  counters — common in E2E-protected frames) applies that side effect per
+  *invocation*, not per frame, and can report a size that no longer matches
+  the frame it then encodes. `encode` must be pure; advance counters outside
+  it and encode the snapshot.
 - **Hostile widths.** `read_be_uint`/`write_be_uint` return
   `InvalidWidth` for `n > 16` in every profile — delete any upstream
   `n > 16` guards you carried, or keep them for domain-specific narrower
@@ -93,6 +97,36 @@ only safe when the wire format has no redundant-encoding freedom.
 ## Fixed-buffer encoding
 
 Use `value.encode_to_slice(&mut buf)?` — a too-small buffer reports
-`InsufficientBuffer { needed, available }` (sized via `encoded_size()` on the
-failure path only; success is a single encode pass). Encoding through a raw
-`&mut [u8]` sink instead surfaces plain `ErrorKind::WriteZero` with no counts.
+`WriteError::Insufficient(InsufficientBuffer { needed, available })`, lifted into
+`Self::Error` through your `From<WriteError>` impl. `encode` runs exactly once
+whether it succeeds or fails; there is no separate sizing pass on the failure
+path. Encoding directly through a `SliceSink` (rather than via `encode_to_slice`)
+reports the identical counts — there is no degraded, count-free error path left
+in 0.4.
+
+## 0.3 to 0.4: the sink change
+
+Mechanical, and the compiler finds every site.
+
+1. `fn encode(&self, w: &mut impl embedded_io::Write)` → `fn encode(&self, sink: &mut impl awc::Sink)`.
+2. Delete your `From<embedded_io::ErrorKind>` and `From<WriteUintError>` impls; add one `From<awc::WriteError>`.
+3. Delete `.map_err(..)` on every write-helper call — `?` works directly now.
+4. `write_all(w, bytes)` → `write_bytes(w, bytes)`.
+5. `encode_to_slice` returns `Self::Error`, not `EncodeToSliceError<Self::Error>`. A
+   `match` on `InsufficientBuffer` / `Encode` arms becomes a match on
+   `WriteError::Insufficient` inside your own error.
+6. Remove `embedded-io` from `[dependencies]` **and** from any `std`/`alloc` feature
+   forwards (`std = ["embedded-io/std", ..]`).
+7. Encoding into a stack buffer: `SliceSink::new(&mut buf)` replaces `let mut w: &mut [u8] = &mut buf;`.
+
+To enforce a transport maximum, wrap the buffer:
+
+```rust
+let mut sink = awc::Limited::new(awc::SliceSink::new(&mut buf), max_response_len);
+match response.encode(&mut sink) {
+    Err(Error::Write(awc::WriteError::Insufficient(_))) => Nrc::ResponseTooLong,
+    other => other?,
+};
+```
+
+`needed` on that error is a lower bound, not the response's true size.
