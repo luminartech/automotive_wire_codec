@@ -331,3 +331,5 @@ fuzz/artifacts/
 /docs/superpowers/
 
 .DS_Store
+
+.omniscient/
