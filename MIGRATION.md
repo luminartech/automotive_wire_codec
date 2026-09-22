@@ -109,15 +109,15 @@ in 0.4.
 Mechanical, and the compiler finds every site.
 
 1. `fn encode(&self, w: &mut impl embedded_io::Write)` → `fn encode(&self, sink: &mut impl awc::Sink)`.
-2. Delete your `From<embedded_io::ErrorKind>` and `From<WriteUintError>` impls; add one `From<awc::WriteError>`.
-3. Delete `.map_err(..)` on every write-helper call — `?` works directly now.
-4. `write_all(w, bytes)` → `write_bytes(w, bytes)`.
-5. `encode_to_slice` returns `Self::Error`, not `EncodeToSliceError<Self::Error>`. A
+1. Delete your `From<embedded_io::ErrorKind>` and `From<WriteUintError>` impls; add one `From<awc::WriteError>`.
+1. Delete `.map_err(..)` on every write-helper call — `?` works directly now.
+1. `write_all(w, bytes)` → `write_bytes(w, bytes)`.
+1. `encode_to_slice` returns `Self::Error`, not `EncodeToSliceError<Self::Error>`. A
    `match` on `InsufficientBuffer` / `Encode` arms becomes a match on
    `WriteError::Insufficient` inside your own error.
-6. Remove `embedded-io` from `[dependencies]` **and** from any `std`/`alloc` feature
+1. Remove `embedded-io` from `[dependencies]` **and** from any `std`/`alloc` feature
    forwards (`std = ["embedded-io/std", ..]`).
-7. Encoding into a stack buffer: `SliceSink::new(&mut buf)` replaces `let mut w: &mut [u8] = &mut buf;`.
+1. Encoding into a stack buffer: `SliceSink::new(&mut buf)` replaces `let mut w: &mut [u8] = &mut buf;`.
 
 To enforce a transport maximum, wrap the buffer:
 
