@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Breaking
+
+- `Encode::encode` takes `&mut impl Sink`, not `&mut impl embedded_io::Write`.
+- `Encode::Error` bound is `From<WriteError>`, not `From<embedded_io::ErrorKind>`.
+- `EncodeToSliceError` deleted. `encode_to_slice` returns `Self::Error`.
+- `WriteUintError` deleted. `WriteError` carries `InvalidWidth`.
+- Free function `write_all` renamed `write_bytes` (collided with `Sink::write_all`).
+- Write helpers take `&mut impl Sink` and return `WriteError`.
+- `embedded-io` removed entirely — no dependency, no feature, no blanket impl.
+  A consumer holding an `embedded_io::Write` peripheral writes a ten-line `Sink` impl.
+- `&mut [u8]` is no longer a sink. `let mut w: &mut [u8] = &mut buf; v.encode(&mut w)`
+  (via embedded-io's slice impl) no longer compiles. Use
+  `v.encode(&mut SliceSink::new(&mut buf))`, or `v.encode_to_slice(&mut buf)`. See
+  `MIGRATION.md` step 7.
+- `InsufficientBuffer`'s size field's **value** changed, not just its
+  documentation. In 0.3 it was `encoded_size()` — an exact total. In 0.4 it is
+  `written + buf.len()` at the failing write — a lower bound, always ≤ the 0.3
+  value, with no compile error to flag the change. Code sizing a retry buffer
+  from it is now silently wrong; call
+  [`encoded_size()`](crate::Encode::encoded_size) for an exact total instead.
+- `InsufficientBuffer::needed` renamed to `needed_at_least`. The old name read
+  as an exact total; the value has only ever been a lower bound (see above),
+  and the rename makes that legible at every call site instead of only in
+  prose. `InsufficientBuffer`'s `Display` output changed to match: "insufficient
+  buffer: needed at least N bytes, M available".
+- `Sink::remaining()` removed from the trait. It was a required method with a
+  prose-only honesty contract (must never over-report, must saturate), backed
+  by a `usize::MAX` sentinel for sinks that could not answer; nothing in the
+  crate — no helper, no `Encode` method, no write path — ever consulted it.
+  `SliceSink` and `Limited` now expose it as an **inherent** method instead
+  (`Limited::remaining` reports the budget alone and no longer consults the
+  wrapped sink — an over-long write still fails with the inner sink's own
+  counts). `CountingSink` no longer has a `remaining()` at all: it is
+  unbounded, and the sentinel existed only to let it pretend otherwise. A
+  `BoundedSink: Sink` supertrait remains the named future path if a caller
+  ever needs to query a bound polymorphically.
+- `CountingSink` no longer derives `Copy`. It is a running-count accumulator
+  mutated through `&mut self`; `Copy` let `let s2 = s1;` silently fork the
+  count instead of failing on a moved value.
+
+### Added
+
+- `Sink`, a single `write_all` method — no partial writes, no remaining-capacity
+  query on the trait (see Breaking).
+- `SliceSink`, exact capacity via an inherent `remaining()`, backs `encode_to_slice`.
+- `Limited`, bounding any sink to a byte budget — how a transport enforces its
+  advertised maximum so an over-long encode fails with counts attached.
+- `WriteError`, one error type for the whole write path.
+- `impl<S: Sink + ?Sized> Sink for &mut S` — lets a function holding
+  `sink: &mut impl Sink` wrap its own borrow (`Limited::new(&mut *sink, n)`) and
+  lets `&mut dyn Sink` satisfy an `impl Sink` bound.
+
+### Changed
+
+- `CountingSink` implements `Sink`; same behaviour, same public path.
+- `encode_to_slice` is single-pass on the failure path as well as on success.
+
+### Unchanged
+
+- The entire read side, and `no_std` / no-alloc / zero-copy.
+
 ## [0.3.0](https://github.com/luminartech/automotive_wire_codec/compare/v0.2.0...v0.3.0) - 2026-07-15
 
 Addresses the aggregated migration feedback from the uds, doip, and someip

@@ -1,6 +1,15 @@
+# Standalone-workspace marker: awc has no [workspace] of its own members,
+# but without this table, a consumer that depends on awc by path (as the
+# in-repo migration branches do) silently absorbs this directory into the
+# CONSUMER's cargo workspace. That is not theoretical: a `cargo fmt --all`
+# run inside a consumer once reformatted files in this repo. An empty
+# [workspace] table makes this Cargo.toml its own workspace root so cargo
+# stops walking up looking for one to join.
+[workspace]
+
 [package]
 name = "automotive-wire-codec"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -21,7 +30,6 @@ include = [
 ]
 
 [dependencies]
-embedded-io = { version = "0.7", default-features = false }
 
 [dev-dependencies]
 proptest = "1.5"

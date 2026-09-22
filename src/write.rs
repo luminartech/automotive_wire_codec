@@ -1,89 +1,117 @@
-//! Big-endian, `core`-only write helpers over [`embedded_io::Write`]. Each returns the
-//! number of bytes written. `embedded_io::Write for &mut [u8]` advances the slice and
-//! errors (never panics) when the slice is exhausted, so encoding into a too-small
-//! stack buffer surfaces as a recoverable `Err` — specifically
-//! [`embedded_io::ErrorKind::WriteZero`], which carries no needed/available counts
-//! (a generic sink cannot know its capacity). For counted diagnostics encode via
-//! [`Encode::encode_to_slice`](crate::Encode::encode_to_slice), which classifies
-//! a failed encode against [`Encode::encoded_size`](crate::Encode::encoded_size)
-//! and returns [`InsufficientBuffer`](crate::InsufficientBuffer).
+//! Big-endian, `core`-only write helpers over [`Sink`](crate::Sink). Each
+//! returns the number of bytes written and fails with [`WriteError`].
+//!
+//! A sink that knows its capacity — [`SliceSink`](crate::SliceSink) or
+//! anything wrapped in [`Limited`](crate::Limited) — reports
+//! [`WriteError::Insufficient`] with `needed_at_least`/`available` attached, so an
+//! overflow arrives already classified. There is no second error type and no
+//! pre-sizing pass.
 
-use crate::error::InvalidWidth;
-use embedded_io::{Error, Write};
+use crate::error::{InsufficientBuffer, InvalidWidth};
+use crate::sink::Sink;
+
+/// Anything that can go wrong on the write path.
+///
+/// One error type for every write helper and for [`Sink`](crate::Sink), so a
+/// consumer's crate-wide error implements a single `From` to lift all of them
+/// through `?`.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WriteError {
+    /// The sink could not accept the write, and knew by how much.
+    ///
+    /// `needed_at_least` is a lower bound — see [`InsufficientBuffer`].
+    Insufficient(InsufficientBuffer),
+    /// The sink failed for its own reasons.
+    ///
+    /// Carries no detail: `Sink::write_all` returns `WriteError` with no
+    /// associated error type, so nothing survives the boundary. A sink that
+    /// needs to act on its own failure — logging it, tearing down a
+    /// connection — must do so before returning this variant, not after.
+    Io,
+    /// A variable-width write was asked for an out-of-range byte width.
+    InvalidWidth(InvalidWidth),
+}
+
+impl From<InsufficientBuffer> for WriteError {
+    fn from(e: InsufficientBuffer) -> Self {
+        WriteError::Insufficient(e)
+    }
+}
+
+impl From<InvalidWidth> for WriteError {
+    fn from(e: InvalidWidth) -> Self {
+        WriteError::InvalidWidth(e)
+    }
+}
+
+impl core::fmt::Display for WriteError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            WriteError::Insufficient(e) => e.fmt(f),
+            WriteError::InvalidWidth(e) => e.fmt(f),
+            WriteError::Io => f.write_str("sink write failed"),
+        }
+    }
+}
+impl core::error::Error for WriteError {}
 
 /// Write a single byte. Returns `1`.
 ///
 /// # Errors
-/// The sink's [`embedded_io::ErrorKind`] if the write fails.
-pub fn write_u8(w: &mut impl Write, v: u8) -> Result<usize, embedded_io::ErrorKind> {
-    w.write_all(&[v]).map_err(|e| e.kind())?;
+/// [`WriteError`] if the sink rejects the write.
+pub fn write_u8(w: &mut impl Sink, v: u8) -> Result<usize, WriteError> {
+    w.write_all(&[v])?;
     Ok(1)
 }
 
 /// Write a big-endian `u16`. Returns `2`.
 ///
 /// # Errors
-/// The sink's [`embedded_io::ErrorKind`] if the write fails.
-pub fn write_u16_be(w: &mut impl Write, v: u16) -> Result<usize, embedded_io::ErrorKind> {
-    w.write_all(&v.to_be_bytes()).map_err(|e| e.kind())?;
+/// [`WriteError`] if the sink rejects the write.
+pub fn write_u16_be(w: &mut impl Sink, v: u16) -> Result<usize, WriteError> {
+    w.write_all(&v.to_be_bytes())?;
     Ok(2)
 }
 
 /// Write a big-endian `u32`. Returns `4`.
 ///
 /// # Errors
-/// The sink's [`embedded_io::ErrorKind`] if the write fails.
-pub fn write_u32_be(w: &mut impl Write, v: u32) -> Result<usize, embedded_io::ErrorKind> {
-    w.write_all(&v.to_be_bytes()).map_err(|e| e.kind())?;
+/// [`WriteError`] if the sink rejects the write.
+pub fn write_u32_be(w: &mut impl Sink, v: u32) -> Result<usize, WriteError> {
+    w.write_all(&v.to_be_bytes())?;
     Ok(4)
 }
 
 /// Write a big-endian `u64`. Returns `8`.
 ///
 /// # Errors
-/// The sink's [`embedded_io::ErrorKind`] if the write fails.
-pub fn write_u64_be(w: &mut impl Write, v: u64) -> Result<usize, embedded_io::ErrorKind> {
-    w.write_all(&v.to_be_bytes()).map_err(|e| e.kind())?;
+/// [`WriteError`] if the sink rejects the write.
+pub fn write_u64_be(w: &mut impl Sink, v: u64) -> Result<usize, WriteError> {
+    w.write_all(&v.to_be_bytes())?;
     Ok(8)
 }
 
 /// Write a big-endian `u128`. Returns `16`.
 ///
 /// # Errors
-/// The sink's [`embedded_io::ErrorKind`] if the write fails.
-pub fn write_u128_be(w: &mut impl Write, v: u128) -> Result<usize, embedded_io::ErrorKind> {
-    w.write_all(&v.to_be_bytes()).map_err(|e| e.kind())?;
+/// [`WriteError`] if the sink rejects the write.
+pub fn write_u128_be(w: &mut impl Sink, v: u128) -> Result<usize, WriteError> {
+    w.write_all(&v.to_be_bytes())?;
     Ok(16)
 }
 
-/// Error from the variable-width write helper ([`write_be_uint`]).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WriteUintError {
-    /// The sink rejected a write.
-    Io(embedded_io::ErrorKind),
-    /// Requested width out of range for the operation.
-    InvalidWidth(InvalidWidth),
+/// Write a raw byte slice verbatim (e.g. an opaque payload). Returns `bytes.len()`.
+///
+/// Named `write_bytes` rather than `write_all` so it does not collide with
+/// [`Sink::write_all`](crate::Sink::write_all) when both are in scope.
+///
+/// # Errors
+/// [`WriteError`] if the sink rejects the write.
+pub fn write_bytes(w: &mut impl Sink, bytes: &[u8]) -> Result<usize, WriteError> {
+    w.write_all(bytes)?;
+    Ok(bytes.len())
 }
-
-impl From<embedded_io::ErrorKind> for WriteUintError {
-    fn from(e: embedded_io::ErrorKind) -> Self {
-        WriteUintError::Io(e)
-    }
-}
-impl From<InvalidWidth> for WriteUintError {
-    fn from(e: InvalidWidth) -> Self {
-        WriteUintError::InvalidWidth(e)
-    }
-}
-impl core::fmt::Display for WriteUintError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            WriteUintError::Io(kind) => write!(f, "write failed: {kind:?}"),
-            WriteUintError::InvalidWidth(e) => e.fmt(f),
-        }
-    }
-}
-impl core::error::Error for WriteUintError {}
 
 /// Minimal number of big-endian bytes needed to represent `value` — computes
 /// the width to pass to [`write_be_uint`] for protocols that emit
@@ -102,8 +130,8 @@ pub const fn minimal_be_len(value: u128) -> usize {
 /// Write the low `n` bytes (`0..=16`) of `value`, big-endian. Returns `n`.
 ///
 /// The width may come straight off the wire: an out-of-range `n` is a *data*
-/// error ([`InvalidWidth`]), not a panic, in every build profile. `n == 0` is
-/// legal and writes nothing.
+/// error ([`WriteError::InvalidWidth`]), not a panic, in every build profile.
+/// `n == 0` is legal and writes nothing.
 ///
 /// **This helper does not check that `value` fits in `n` bytes.** Bytes of
 /// `value` above the low `n` are silently dropped: if
@@ -114,102 +142,100 @@ pub const fn minimal_be_len(value: u128) -> usize {
 /// writing, or compute the width with [`minimal_be_len`] so nothing is lost.
 ///
 /// # Errors
-/// [`WriteUintError::InvalidWidth`] if `n > 16`; [`WriteUintError::Io`] if the
-/// sink rejects the write.
-pub fn write_be_uint(w: &mut impl Write, value: u128, n: usize) -> Result<usize, WriteUintError> {
+/// [`WriteError::InvalidWidth`] if `n > 16`; otherwise whatever the sink
+/// rejects the write with.
+pub fn write_be_uint(w: &mut impl Sink, value: u128, n: usize) -> Result<usize, WriteError> {
     if n > 16 {
         return Err(InvalidWidth { max: 16, got: n }.into());
     }
     let bytes = value.to_be_bytes(); // 16 bytes, big-endian
-    w.write_all(&bytes[16 - n..])
-        .map_err(|e| WriteUintError::from(e.kind()))?;
+    w.write_all(&bytes[16 - n..])?;
     Ok(n)
-}
-
-/// Write a raw byte slice verbatim (e.g. an opaque payload). Returns `bytes.len()`.
-///
-/// # Errors
-/// The sink's [`embedded_io::ErrorKind`] if the write fails.
-pub fn write_all(w: &mut impl Write, bytes: &[u8]) -> Result<usize, embedded_io::ErrorKind> {
-    w.write_all(bytes).map_err(|e| e.kind())?;
-    Ok(bytes.len())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::InvalidWidth;
+    use crate::error::{InsufficientBuffer, InvalidWidth};
+    use crate::sink::{CountingSink, SliceSink};
 
     #[test]
     fn write_u16_be_writes_big_endian_and_counts() {
         let mut buf = [0u8; 4];
-        let mut w: &mut [u8] = &mut buf;
-        let n = write_u16_be(&mut w, 0x1234).unwrap();
-        assert_eq!(n, 2);
+        let mut w = SliceSink::new(&mut buf);
+        assert_eq!(write_u16_be(&mut w, 0x1234).unwrap(), 2);
         assert_eq!(&buf[..2], &[0x12, 0x34]);
-    }
-
-    #[test]
-    fn write_be_uint_writes_only_low_n_bytes() {
-        let mut buf = [0u8; 3];
-        let mut w: &mut [u8] = &mut buf;
-        // value has high bytes set; only the low 3 must be written, big-endian.
-        let n = write_be_uint(&mut w, 0xAABB_CCDD_u128, 3).unwrap();
-        assert_eq!(n, 3);
-        assert_eq!(buf, [0xBB, 0xCC, 0xDD]);
-    }
-
-    #[test]
-    fn write_all_writes_verbatim() {
-        let mut buf = [0u8; 4];
-        let mut w: &mut [u8] = &mut buf;
-        let n = write_all(&mut w, &[9, 8, 7]).unwrap();
-        assert_eq!(n, 3);
-        assert_eq!(&buf[..3], &[9, 8, 7]);
-    }
-
-    #[test]
-    fn write_into_too_small_slice_errors_not_panics() {
-        let mut buf = [0u8; 1];
-        let mut w: &mut [u8] = &mut buf;
-        assert!(write_u16_be(&mut w, 0x1234).is_err());
-    }
-
-    #[test]
-    fn write_be_uint_hostile_width_is_data_error_not_panic() {
-        // SE-1 write half: previously `16 - n` underflowed and PANICKED in
-        // release builds. Must now be a recoverable error in all profiles.
-        let mut buf = [0u8; 300];
-        let mut w: &mut [u8] = &mut buf;
-        assert_eq!(
-            write_be_uint(&mut w, 0xABCD, 255),
-            Err(WriteUintError::InvalidWidth(InvalidWidth {
-                max: 16,
-                got: 255
-            }))
-        );
-    }
-
-    #[test]
-    fn write_be_uint_zero_width_writes_nothing() {
-        let mut buf = [0xFFu8; 2];
-        let mut w: &mut [u8] = &mut buf;
-        assert_eq!(write_be_uint(&mut w, 0xABCD, 0).unwrap(), 0);
-        assert_eq!(buf, [0xFF, 0xFF]);
     }
 
     #[test]
     fn write_u128_be_writes_big_endian_and_counts() {
         let v = 0x0102_0304_0506_0708_090A_0B0C_0D0E_0F10_u128;
         let mut buf = [0u8; 16];
-        let mut w: &mut [u8] = &mut buf;
+        let mut w = SliceSink::new(&mut buf);
         assert_eq!(write_u128_be(&mut w, v).unwrap(), 16);
         assert_eq!(buf, v.to_be_bytes());
     }
 
     #[test]
+    fn write_be_uint_writes_only_low_n_bytes() {
+        let mut buf = [0u8; 3];
+        let mut w = SliceSink::new(&mut buf);
+        assert_eq!(write_be_uint(&mut w, 0xAABB_CCDD_u128, 3).unwrap(), 3);
+        assert_eq!(buf, [0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn write_bytes_writes_verbatim() {
+        let mut buf = [0u8; 4];
+        let mut w = SliceSink::new(&mut buf);
+        assert_eq!(write_bytes(&mut w, &[9, 8, 7]).unwrap(), 3);
+        assert_eq!(&buf[..3], &[9, 8, 7]);
+    }
+
+    #[test]
+    fn write_into_too_small_sink_reports_counts_not_a_bare_kind() {
+        // The point of the 0.4 change: counts survive the helper. In 0.3 this
+        // collapsed to ErrorKind::WriteZero via .map_err(|e| e.kind()).
+        let mut buf = [0u8; 1];
+        let mut w = SliceSink::new(&mut buf);
+        assert_eq!(
+            write_u16_be(&mut w, 0x1234),
+            Err(WriteError::Insufficient(InsufficientBuffer {
+                needed_at_least: 2,
+                available: 1
+            }))
+        );
+    }
+
+    #[test]
+    fn write_be_uint_hostile_width_is_data_error_not_panic() {
+        // Previously `16 - n` underflowed and PANICKED in release builds.
+        let mut w = CountingSink::new();
+        assert_eq!(
+            write_be_uint(&mut w, 0xABCD, 255),
+            Err(WriteError::InvalidWidth(InvalidWidth { max: 16, got: 255 }))
+        );
+    }
+
+    #[test]
+    fn write_be_uint_zero_width_writes_nothing() {
+        let mut buf = [0xFFu8; 2];
+        let mut w = SliceSink::new(&mut buf);
+        assert_eq!(write_be_uint(&mut w, 0xABCD, 0).unwrap(), 0);
+        assert_eq!(buf, [0xFF, 0xFF]);
+    }
+
+    #[test]
+    fn write_be_uint_truncates_value_wider_than_n() {
+        // Characterization of the documented contract: no minimality check.
+        let mut buf = [0xEEu8; 4];
+        let mut w = SliceSink::new(&mut buf);
+        assert_eq!(write_be_uint(&mut w, 0x1_0000, 2).unwrap(), 2);
+        assert_eq!(&buf[..2], &[0x00, 0x00]);
+    }
+
+    #[test]
     fn minimal_be_len_boundaries() {
-        // uds P3/SE-3 contract: 0 needs 0 bytes; callers wanting >=1 use .max(1).
         assert_eq!(minimal_be_len(0), 0);
         assert_eq!(minimal_be_len(1), 1);
         assert_eq!(minimal_be_len(0xFF), 1);
@@ -221,27 +247,53 @@ mod tests {
     }
 
     #[test]
-    fn write_be_uint_truncates_value_wider_than_n() {
-        // Characterization of the documented contract: the helper does NOT
-        // check minimality — an over-wide value is silently truncated to its
-        // low n bytes and round-trips to a different value. Callers guard
-        // with minimal_be_len(value) <= n.
-        let mut buf = [0xEEu8; 4];
-        let mut w: &mut [u8] = &mut buf;
-        assert_eq!(write_be_uint(&mut w, 0x1_0000, 2).unwrap(), 2);
-        assert_eq!(&buf[..2], &[0x00, 0x00]); // high byte dropped, reads back as 0
-    }
-
-    #[test]
     fn minimal_be_len_pairs_with_write_be_uint() {
-        // The minimal width loses nothing on a write/read round trip, and the
-        // advertised idiom needs no cast at the call site.
         let v = 0x00AB_CDEF_u128;
         let n = minimal_be_len(v);
         assert_eq!(n, 3);
         let mut buf = [0u8; 16];
-        let mut w: &mut [u8] = &mut buf;
+        let mut w = SliceSink::new(&mut buf);
         assert_eq!(write_be_uint(&mut w, v, minimal_be_len(v)).unwrap(), n);
         assert_eq!(&buf[..n], &[0xAB, 0xCD, 0xEF]);
+    }
+
+    #[test]
+    fn write_error_carries_counts_and_displays() {
+        let e = WriteError::from(InsufficientBuffer {
+            needed_at_least: 8,
+            available: 4,
+        });
+        assert_eq!(
+            e,
+            WriteError::Insufficient(InsufficientBuffer {
+                needed_at_least: 8,
+                available: 4
+            })
+        );
+        assert_eq!(
+            std::string::ToString::to_string(&e),
+            "insufficient buffer: needed at least 8 bytes, 4 available"
+        );
+    }
+
+    #[test]
+    fn write_error_carries_invalid_width() {
+        let e = WriteError::from(InvalidWidth { max: 16, got: 255 });
+        assert_eq!(
+            e,
+            WriteError::InvalidWidth(InvalidWidth { max: 16, got: 255 })
+        );
+        assert_eq!(
+            std::string::ToString::to_string(&e),
+            "invalid width: got 255, max 16"
+        );
+    }
+
+    #[test]
+    fn write_error_io_displays() {
+        assert_eq!(
+            std::string::ToString::to_string(&WriteError::Io),
+            "sink write failed"
+        );
     }
 }
