@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/luminartech/automotive_wire_codec/compare/v0.4.0...v0.4.1) - 2026-11-18
+
+### Fixed
+
+- resolve new clippy lints in tests ([#16](https://github.com/luminartech/automotive_wire_codec/pull/16))
+
 ## [0.4.0]
 
 ### Breaking
