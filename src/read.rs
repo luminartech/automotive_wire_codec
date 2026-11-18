@@ -248,7 +248,7 @@ mod tests {
     fn read_u32_be_exact_leaves_empty_remainder() {
         let (v, rest) = read_u32_be(&[0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
         assert_eq!(v, 0xDEAD_BEEF);
-        assert!(rest.is_empty());
+        assert_eq!(rest, []);
     }
 
     #[test]
@@ -364,7 +364,7 @@ mod tests {
         let buf = 0xDEAD_BEEF_u32.to_be_bytes();
         let (v, rest) = read_be_uint_into::<u32>(&buf, 4).unwrap();
         assert_eq!(v, 0xDEAD_BEEF);
-        assert!(rest.is_empty());
+        assert_eq!(rest, []);
         let (b, _) = read_be_uint_into::<u8>(&buf, 1).unwrap();
         assert_eq!(b, 0xDE);
     }
@@ -410,7 +410,7 @@ mod tests {
 
         let (arr, rest) = read_optional_array::<4>(&[]);
         assert_eq!(arr, None);
-        assert!(rest.is_empty());
+        assert_eq!(rest, []);
 
         // Partial tail: None, buffer untouched — a following decode_exact
         // will surface the stragglers as TrailingBytes.

@@ -314,6 +314,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::mut_mut)] // `&mut &mut` is the point: it selects the blanket `&mut S` impl.
     fn mut_ref_to_slice_sink_is_itself_a_sink() {
         let mut buf = [0u8; 4];
         let mut inner = SliceSink::new(&mut buf);
